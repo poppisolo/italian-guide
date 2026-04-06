@@ -13,6 +13,7 @@ import ClassBuilder from "./pages/ClassBuilder";
 import Registro from "./pages/Registro";
 import Insegnanti from "./pages/Insegnanti";
 import PlannerSettimanale from "./pages/PlannerSettimanale";
+import ElencoClassi from "./pages/ElencoClassi";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
