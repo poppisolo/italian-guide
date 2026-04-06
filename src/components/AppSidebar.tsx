@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Users, ClipboardCheck, Puzzle, BookOpen, UserCog,
-  Library, Wrench, Building2
+  Library, Wrench, Building2, CalendarDays
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useLocation } from 'react-router-dom';
@@ -12,11 +12,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 
 const mainItems = [
   { title: 'Dashboard', url: '/', icon: LayoutDashboard },
-  { title: 'Studenti', url: '/studenti', icon: Users },
-  { title: 'Test', url: '/test', icon: ClipboardCheck },
-  { title: 'Class Builder', url: '/class-builder', icon: Puzzle },
-  { title: 'Registro', url: '/registro', icon: BookOpen },
+  { title: 'Planner Settimanale', url: '/planner', icon: CalendarDays },
   { title: 'Insegnanti', url: '/insegnanti', icon: UserCog },
+  { title: 'Studenti', url: '/studenti', icon: Users },
+  { title: 'Gestione Test', url: '/test', icon: ClipboardCheck },
+  { title: 'Class Builder', url: '/class-builder', icon: Puzzle },
 ];
 
 const futureItems = [
@@ -35,7 +35,7 @@ export function AppSidebar() {
       <SidebarHeader className="p-4">
         {!collapsed && (
           <div className="flex items-center gap-2">
-            <span className="text-xl font-bold tracking-tight">🌱 SEMI FORESTI</span>
+            <span className="text-xl font-bold tracking-tight">🌱 SCUOLA DI ITALIANO</span>
           </div>
         )}
         {collapsed && <span className="text-xl">🌱</span>}
