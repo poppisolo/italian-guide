@@ -13,6 +13,7 @@ import ClassBuilder from "./pages/ClassBuilder";
 import Registro from "./pages/Registro";
 import Insegnanti from "./pages/Insegnanti";
 import PlannerSettimanale from "./pages/PlannerSettimanale";
+import ElencoClassi from "./pages/ElencoClassi";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -36,6 +37,7 @@ const App = () => (
                   <Routes>
                     <Route path="/" element={<Index />} />
                     <Route path="/planner" element={<PlannerSettimanale />} />
+                    <Route path="/classi" element={<ElencoClassi />} />
                     <Route path="/studenti" element={<Studenti />} />
                     <Route path="/test" element={<TestPage />} />
                     <Route path="/class-builder" element={<ClassBuilder />} />

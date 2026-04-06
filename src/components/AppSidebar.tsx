@@ -1,20 +1,26 @@
 import {
   LayoutDashboard, Users, ClipboardCheck, Puzzle, BookOpen, UserCog,
-  Library, Wrench, Building2, CalendarDays
+  Library, Wrench, Building2, CalendarDays, GraduationCap, List, ChevronDown,
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useLocation } from 'react-router-dom';
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
-  SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, useSidebar,
+  SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubItem, SidebarMenuSubButton,
+  SidebarHeader, SidebarFooter, useSidebar,
 } from '@/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
-const mainItems = [
+const topItems = [
   { title: 'Dashboard', url: '/', icon: LayoutDashboard },
   { title: 'Planner Settimanale', url: '/planner', icon: CalendarDays },
   { title: 'Insegnanti', url: '/insegnanti', icon: UserCog },
   { title: 'Studenti', url: '/studenti', icon: Users },
+];
+
+const classiSubItems = [
+  { title: 'Elenco Classi', url: '/classi', icon: List },
   { title: 'Gestione Test', url: '/test', icon: ClipboardCheck },
   { title: 'Class Builder', url: '/class-builder', icon: Puzzle },
 ];
@@ -29,6 +35,8 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
   const location = useLocation();
+
+  const classiActive = classiSubItems.some(i => location.pathname === i.url);
 
   return (
     <Sidebar collapsible="icon">
@@ -46,7 +54,7 @@ export function AppSidebar() {
           <SidebarGroupLabel className="text-sidebar-foreground/70">Moduli</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainItems.map((item) => (
+              {topItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={location.pathname === item.url}>
                     <NavLink to={item.url} end className="hover:bg-sidebar-accent/50" activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium">
@@ -56,6 +64,37 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+
+              {/* Classi submenu */}
+              <Collapsible defaultOpen={classiActive} className="group/collapsible">
+                <SidebarMenuItem>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton className={`hover:bg-sidebar-accent/50 ${classiActive ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium' : ''}`}>
+                      <GraduationCap className="mr-2 h-4 w-4" />
+                      {!collapsed && (
+                        <>
+                          <span className="flex-1">Classi</span>
+                          <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
+                        </>
+                      )}
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      {classiSubItems.map((sub) => (
+                        <SidebarMenuSubItem key={sub.title}>
+                          <SidebarMenuSubButton asChild isActive={location.pathname === sub.url}>
+                            <NavLink to={sub.url} end className="hover:bg-sidebar-accent/50" activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium">
+                              <sub.icon className="mr-2 h-3 w-3" />
+                              <span>{sub.title}</span>
+                            </NavLink>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </SidebarMenuItem>
+              </Collapsible>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
