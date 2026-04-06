@@ -6,10 +6,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { StatusBadge } from '@/components/StatusBadge';
 import { toast } from 'sonner';
-import { Plus, ClipboardCheck } from 'lucide-react';
+import { Plus, ClipboardCheck, Users } from 'lucide-react';
 import type { Livello, SessioneTest } from '@/data/types';
 
 const livelli: Livello[] = ['Alfa', 'Pre-A1', 'A1', 'A2', 'B1', 'B2'];
@@ -23,12 +25,12 @@ export default function TestPage() {
   const [results, setResults] = useState<Record<number, { livello: Livello; note: string }>>({});
 
   const studentiAttesaTest = profiliStudenti.filter(p => p.statoScuola === 'In attesa test');
+  const studentiAttesaClasse = profiliStudenti.filter(p => p.statoScuola === 'In attesa classe');
   const getUtente = (idUtente: number) => utenti.find(u => u.id === idUtente);
 
   const handleCreateSession = () => {
     if (!newDate) { toast.error('Seleziona una data'); return; }
     if (selected.length === 0) { toast.error('Seleziona almeno uno studente'); return; }
-
     const newSession: SessioneTest = {
       id: Math.max(...sessioniTest.map(s => s.id), 0) + 1,
       data: newDate,
@@ -50,22 +52,16 @@ export default function TestPage() {
     const risultati = Object.entries(results).map(([idStr, r]) => ({
       idStudente: parseInt(idStr), livello: r.livello, note: r.note || undefined,
     }));
-
     if (risultati.length !== session.studentiConvocati.length) {
       toast.error('Inserisci il livello per tutti gli studenti convocati');
       return;
     }
-
     setSessioniTest(prev => prev.map(s => s.id === session.id ? { ...s, risultati, completata: true } : s));
-
     setProfiliStudenti(prev => prev.map(p => {
       const res = risultati.find(r => r.idStudente === p.idUtente);
-      if (res) {
-        return { ...p, statoScuola: 'In attesa classe' as const, livelloRaggiunto: res.livello, dataUltimoTest: session.data, noteDidattiche: res.note };
-      }
+      if (res) return { ...p, statoScuola: 'In attesa classe' as const, livelloRaggiunto: res.livello, dataUltimoTest: session.data, noteDidattiche: res.note };
       return p;
     }));
-
     setShowResult(null);
     setResults({});
     toast.success('Risultati salvati. Studenti aggiornati a "In attesa classe"');
@@ -89,37 +85,100 @@ export default function TestPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">Gestione Test</h1>
-          <p className="text-muted-foreground">{studentiAttesaTest.length} studenti in attesa di test</p>
+          <p className="text-muted-foreground">Gestisci sessioni di test e risultati</p>
         </div>
         <Button onClick={() => setShowNew(true)} className="gap-2"><Plus className="h-4 w-4" />Nuova Sessione</Button>
       </div>
 
-      <div className="grid gap-4">
-        {sessioniTest.length === 0 && (
-          <Card><CardContent className="py-8 text-center text-muted-foreground">Nessuna sessione di test creata</CardContent></Card>
-        )}
-        {[...sessioniTest].reverse().map(session => (
-          <Card key={session.id}>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-lg">Sessione del {session.data}</CardTitle>
-              {session.completata
-                ? <span className="text-sm text-primary font-medium">✓ Completata</span>
-                : <Button size="sm" variant="outline" onClick={() => openResults(session)} className="gap-2"><ClipboardCheck className="h-4 w-4" />Inserisci Risultati</Button>
-              }
+      {/* Two-column layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Left: Student Lists */}
+        <div className="space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="h-4 w-4 text-destructive" />
+                In attesa test ({studentiAttesaTest.length})
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground">{session.studentiConvocati.length} studenti convocati</p>
-              {session.completata && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {session.risultati.map(r => {
-                    const u = getUtente(r.idStudente);
-                    return <span key={r.idStudente} className="text-xs bg-muted px-2 py-1 rounded">{u?.nome} {u?.cognome}: {r.livello}</span>;
+              {studentiAttesaTest.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-2">Nessuno studente</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {studentiAttesaTest.map(p => {
+                    const u = getUtente(p.idUtente);
+                    return (
+                      <div key={p.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 text-sm">
+                        <span className="font-medium">{u?.nome} {u?.cognome}</span>
+                        <span className="text-muted-foreground text-xs">{u?.nazionalita}</span>
+                      </div>
+                    );
                   })}
                 </div>
               )}
             </CardContent>
           </Card>
-        ))}
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="h-4 w-4 text-primary" />
+                In attesa classe ({studentiAttesaClasse.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {studentiAttesaClasse.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-2">Nessuno studente</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {studentiAttesaClasse.map(p => {
+                    const u = getUtente(p.idUtente);
+                    return (
+                      <div key={p.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 text-sm">
+                        <div>
+                          <span className="font-medium">{u?.nome} {u?.cognome}</span>
+                          {p.livelloRaggiunto && <Badge variant="secondary" className="ml-2 text-xs">{p.livelloRaggiunto}</Badge>}
+                        </div>
+                        <span className="text-muted-foreground text-xs">{p.dataUltimoTest}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right: Test Sessions */}
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold">Sessioni di Test</h2>
+          {sessioniTest.length === 0 && (
+            <Card><CardContent className="py-8 text-center text-muted-foreground">Nessuna sessione creata</CardContent></Card>
+          )}
+          {[...sessioniTest].reverse().map(session => (
+            <Card key={session.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => openResults(session)}>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-base">Sessione del {session.data}</CardTitle>
+                {session.completata
+                  ? <Badge variant="default" className="bg-primary">✓ Completata</Badge>
+                  : <Badge variant="outline">In corso</Badge>
+                }
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">{session.studentiConvocati.length} studenti convocati</p>
+                {session.completata && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {session.risultati.map(r => {
+                      const u = getUtente(r.idStudente);
+                      return <Badge key={r.idStudente} variant="secondary" className="text-xs">{u?.nome}: {r.livello}</Badge>;
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
 
       {/* New Session Dialog */}
@@ -139,9 +198,7 @@ export default function TestPage() {
                   const u = getUtente(p.idUtente);
                   return (
                     <div key={p.id} className="flex items-center gap-3">
-                      <Checkbox checked={selected.includes(p.id)} onCheckedChange={(v) => {
-                        setSelected(prev => v ? [...prev, p.id] : prev.filter(id => id !== p.id));
-                      }} />
+                      <Checkbox checked={selected.includes(p.id)} onCheckedChange={(v) => setSelected(prev => v ? [...prev, p.id] : prev.filter(id => id !== p.id))} />
                       <span className="text-sm">{u?.nome} {u?.cognome} — {u?.nazionalita}</span>
                     </div>
                   );
@@ -161,7 +218,7 @@ export default function TestPage() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Risultati Test — {showResult?.data}</DialogTitle>
-            <DialogDescription>Assegna il livello a ciascuno studente.</DialogDescription>
+            <DialogDescription>{showResult?.completata ? 'Risultati registrati.' : 'Assegna il livello a ciascuno studente.'}</DialogDescription>
           </DialogHeader>
           <Table>
             <TableHeader>
@@ -178,13 +235,13 @@ export default function TestPage() {
                   <TableRow key={idStudente}>
                     <TableCell>{u?.nome} {u?.cognome}</TableCell>
                     <TableCell>
-                      <Select value={results[idStudente]?.livello || 'A1'} onValueChange={v => setResults(prev => ({ ...prev, [idStudente]: { ...prev[idStudente], livello: v as Livello } }))}>
+                      <Select disabled={showResult.completata} value={results[idStudente]?.livello || 'A1'} onValueChange={v => setResults(prev => ({ ...prev, [idStudente]: { ...prev[idStudente], livello: v as Livello } }))}>
                         <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
                         <SelectContent>{livelli.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}</SelectContent>
                       </Select>
                     </TableCell>
                     <TableCell>
-                      <Input placeholder="Note..." value={results[idStudente]?.note || ''} onChange={e => setResults(prev => ({ ...prev, [idStudente]: { ...prev[idStudente], note: e.target.value } }))} />
+                      <Input disabled={showResult.completata} placeholder="Note..." value={results[idStudente]?.note || ''} onChange={e => setResults(prev => ({ ...prev, [idStudente]: { ...prev[idStudente], note: e.target.value } }))} />
                     </TableCell>
                   </TableRow>
                 );
@@ -192,7 +249,7 @@ export default function TestPage() {
             </TableBody>
           </Table>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowResult(null); setResults({}); }}>Annulla</Button>
+            <Button variant="outline" onClick={() => { setShowResult(null); setResults({}); }}>Chiudi</Button>
             {!showResult?.completata && <Button onClick={() => showResult && handleSaveResults(showResult)}>Salva Risultati</Button>}
           </DialogFooter>
         </DialogContent>

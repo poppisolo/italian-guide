@@ -12,6 +12,7 @@ import TestPage from "./pages/Test";
 import ClassBuilder from "./pages/ClassBuilder";
 import Registro from "./pages/Registro";
 import Insegnanti from "./pages/Insegnanti";
+import PlannerSettimanale from "./pages/PlannerSettimanale";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -29,11 +30,12 @@ const App = () => (
               <div className="flex-1 flex flex-col">
                 <header className="h-12 flex items-center border-b bg-background px-4">
                   <SidebarTrigger />
-                  <span className="ml-3 text-sm font-medium text-muted-foreground">SEMI FORESTI — Gestionale Scuola</span>
+                  <span className="ml-3 text-sm font-medium text-muted-foreground">SCUOLA DI ITALIANO — Gestionale</span>
                 </header>
                 <main className="flex-1 p-4 md:p-6 overflow-auto">
                   <Routes>
                     <Route path="/" element={<Index />} />
+                    <Route path="/planner" element={<PlannerSettimanale />} />
                     <Route path="/studenti" element={<Studenti />} />
                     <Route path="/test" element={<TestPage />} />
                     <Route path="/class-builder" element={<ClassBuilder />} />
