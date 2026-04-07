@@ -7,11 +7,12 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { StatusBadge } from '@/components/StatusBadge';
 import { toast } from 'sonner';
-import { Plus, ClipboardCheck, Users } from 'lucide-react';
+import { Plus, ClipboardCheck, Users, CalendarClock } from 'lucide-react';
 import type { Livello, SessioneTest } from '@/data/types';
 
 const livelli: Livello[] = ['Alfa', 'Pre-A1', 'A1', 'A2', 'B1', 'B2'];
@@ -24,9 +25,18 @@ export default function TestPage() {
   const [selected, setSelected] = useState<number[]>([]);
   const [results, setResults] = useState<Record<number, { livello: Livello; note: string }>>({});
 
-  const studentiAttesaTest = profiliStudenti.filter(p => p.statoScuola === 'In attesa test');
-  const studentiAttesaClasse = profiliStudenti.filter(p => p.statoScuola === 'In attesa classe');
   const getUtente = (idUtente: number) => utenti.find(u => u.id === idUtente);
+
+  // Students awaiting test but NOT yet convoked to any future session
+  const convokedStudentIds = sessioniTest.filter(s => !s.completata).flatMap(s => s.studentiConvocati);
+  const studentiAttesaTest = profiliStudenti.filter(p => p.statoScuola === 'In attesa test' && !convokedStudentIds.includes(p.idUtente));
+  const studentiConvocati = profiliStudenti.filter(p => p.statoScuola === 'In attesa test' && convokedStudentIds.includes(p.idUtente));
+  const studentiAttesaClasse = profiliStudenti.filter(p => p.statoScuola === 'In attesa classe');
+
+  const getConvocationDate = (idUtente: number) => {
+    const session = sessioniTest.find(s => !s.completata && s.studentiConvocati.includes(idUtente));
+    return session?.data || '';
+  };
 
   const handleCreateSession = () => {
     if (!newDate) { toast.error('Seleziona una data'); return; }
@@ -80,6 +90,9 @@ export default function TestPage() {
     }
   };
 
+  const futureSessions = sessioniTest.filter(s => !s.completata);
+  const pastSessions = sessioniTest.filter(s => s.completata);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -90,95 +103,140 @@ export default function TestPage() {
         <Button onClick={() => setShowNew(true)} className="gap-2"><Plus className="h-4 w-4" />Nuova Sessione</Button>
       </div>
 
-      {/* Two-column layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left: Student Lists */}
-        <div className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Users className="h-4 w-4 text-destructive" />
-                In attesa test ({studentiAttesaTest.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {studentiAttesaTest.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-2">Nessuno studente</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {studentiAttesaTest.map(p => {
-                    const u = getUtente(p.idUtente);
-                    return (
-                      <div key={p.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 text-sm">
+      {/* Student status cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="border-l-4 border-l-destructive">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Users className="h-4 w-4 text-destructive" />
+              In attesa test ({studentiAttesaTest.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {studentiAttesaTest.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-2">Nessuno studente</p>
+            ) : (
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {studentiAttesaTest.map(p => {
+                  const u = getUtente(p.idUtente);
+                  return (
+                    <div key={p.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 text-sm">
+                      <span className="font-medium">{u?.nome} {u?.cognome}</span>
+                      <span className="text-muted-foreground text-xs">{u?.nazionalita}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-orange-400">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <CalendarClock className="h-4 w-4 text-orange-500" />
+              Convocati al test ({studentiConvocati.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {studentiConvocati.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-2">Nessuno studente</p>
+            ) : (
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {studentiConvocati.map(p => {
+                  const u = getUtente(p.idUtente);
+                  const date = getConvocationDate(p.idUtente);
+                  return (
+                    <div key={p.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 text-sm">
+                      <span className="font-medium">{u?.nome} {u?.cognome}</span>
+                      <Badge variant="outline" className="text-xs">{date}</Badge>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-primary">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Users className="h-4 w-4 text-primary" />
+              In attesa classe ({studentiAttesaClasse.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {studentiAttesaClasse.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-2">Nessuno studente</p>
+            ) : (
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {studentiAttesaClasse.map(p => {
+                  const u = getUtente(p.idUtente);
+                  return (
+                    <div key={p.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 text-sm">
+                      <div>
                         <span className="font-medium">{u?.nome} {u?.cognome}</span>
-                        <span className="text-muted-foreground text-xs">{u?.nazionalita}</span>
+                        {p.livelloRaggiunto && <Badge variant="secondary" className="ml-2 text-xs">{p.livelloRaggiunto}</Badge>}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                      <span className="text-muted-foreground text-xs">{p.dataUltimoTest}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Users className="h-4 w-4 text-primary" />
-                In attesa classe ({studentiAttesaClasse.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {studentiAttesaClasse.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-2">Nessuno studente</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {studentiAttesaClasse.map(p => {
-                    const u = getUtente(p.idUtente);
-                    return (
-                      <div key={p.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 text-sm">
-                        <div>
-                          <span className="font-medium">{u?.nome} {u?.cognome}</span>
-                          {p.livelloRaggiunto && <Badge variant="secondary" className="ml-2 text-xs">{p.livelloRaggiunto}</Badge>}
-                        </div>
-                        <span className="text-muted-foreground text-xs">{p.dataUltimoTest}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+      <Separator />
 
-        {/* Right: Test Sessions */}
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold">Sessioni di Test</h2>
-          {sessioniTest.length === 0 && (
-            <Card><CardContent className="py-8 text-center text-muted-foreground">Nessuna sessione creata</CardContent></Card>
-          )}
-          {[...sessioniTest].reverse().map(session => (
-            <Card key={session.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => openResults(session)}>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-base">Sessione del {session.data}</CardTitle>
-                {session.completata
-                  ? <Badge variant="default" className="bg-primary">✓ Completata</Badge>
-                  : <Badge variant="outline">In corso</Badge>
-                }
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">{session.studentiConvocati.length} studenti convocati</p>
-                {session.completata && (
+      {/* Test Sessions */}
+      <div className="space-y-4">
+        <h2 className="text-xl font-semibold">Sessioni di Test</h2>
+
+        {futureSessions.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Sessioni in programma</h3>
+            {futureSessions.map(session => (
+              <Card key={session.id} className="cursor-pointer hover:shadow-md transition-shadow border-l-4 border-l-orange-400" onClick={() => openResults(session)}>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-base">Sessione del {session.data}</CardTitle>
+                  <Badge variant="outline">In corso</Badge>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">{session.studentiConvocati.length} studenti convocati</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {pastSessions.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Sessioni completate</h3>
+            {[...pastSessions].reverse().map(session => (
+              <Card key={session.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => openResults(session)}>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-base">Sessione del {session.data}</CardTitle>
+                  <Badge variant="default" className="bg-primary">✓ Completata</Badge>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">{session.studentiConvocati.length} studenti convocati</p>
                   <div className="mt-2 flex flex-wrap gap-1">
                     {session.risultati.map(r => {
                       const u = getUtente(r.idStudente);
                       return <Badge key={r.idStudente} variant="secondary" className="text-xs">{u?.nome}: {r.livello}</Badge>;
                     })}
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {sessioniTest.length === 0 && (
+          <Card><CardContent className="py-8 text-center text-muted-foreground">Nessuna sessione creata</CardContent></Card>
+        )}
       </div>
 
       {/* New Session Dialog */}

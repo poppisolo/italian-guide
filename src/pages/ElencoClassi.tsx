@@ -1,36 +1,37 @@
 import { useState } from 'react';
 import { useStore } from '@/data/store';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { Pencil, Trash2, ArrowUpDown } from 'lucide-react';
-import type { Classe, Livello } from '@/data/types';
+import type { Classe, Livello, Giorno } from '@/data/types';
 
 type SortField = 'nomeClasse' | 'insegnante' | 'livelloTarget' | 'studenti' | 'giorno';
+const livelli: Livello[] = ['Alfa', 'Pre-A1', 'A1', 'A2', 'B1', 'B2'];
+const giorni: Giorno[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
 
 export default function ElencoClassi() {
-  const { classi, setClassi, utenti, tavoli, iscrizioniClassi, setIscrizioniClassi, setProfiliStudenti } = useStore();
+  const { classi, setClassi, utenti, tavoli, iscrizioniClassi, setIscrizioniClassi, setProfiliStudenti, profiliVolontari } = useStore();
   const [filterInsegnante, setFilterInsegnante] = useState('all');
   const [filterLivello, setFilterLivello] = useState('all');
   const [sortField, setSortField] = useState<SortField>('nomeClasse');
   const [sortAsc, setSortAsc] = useState(true);
   const [editClass, setEditClass] = useState<Classe | null>(null);
-  const [editName, setEditName] = useState('');
+  const [editForm, setEditForm] = useState({ nomeClasse: '', idInsegnante: '', idTavolo: '', giorno: '' as string, oraInizio: '', oraFine: '', livelloTarget: '' as string });
   const [deleteClass, setDeleteClass] = useState<Classe | null>(null);
 
   const getUtente = (id: number) => utenti.find(u => u.id === id);
   const getTavolo = (id: number) => tavoli.find(t => t.id === id);
   const getStudentCount = (classId: number) => iscrizioniClassi.filter(ic => ic.idClasse === classId).length;
 
-  const insegnanti = [...new Set(classi.map(c => c.idInsegnante))].map(id => getUtente(id)).filter(Boolean);
-  const livelli: Livello[] = ['Alfa', 'Pre-A1', 'A1', 'A2', 'B1', 'B2'];
+  const insegnanti = profiliVolontari.map(v => getUtente(v.idUtente)).filter(Boolean);
 
   let filtered = classi.filter(c => {
     if (filterInsegnante !== 'all' && c.idInsegnante !== parseInt(filterInsegnante)) return false;
@@ -45,11 +46,7 @@ export default function ElencoClassi() {
       case 'insegnante': cmp = (getUtente(a.idInsegnante)?.cognome || '').localeCompare(getUtente(b.idInsegnante)?.cognome || ''); break;
       case 'livelloTarget': cmp = livelli.indexOf(a.livelloTarget) - livelli.indexOf(b.livelloTarget); break;
       case 'studenti': cmp = getStudentCount(a.id) - getStudentCount(b.id); break;
-      case 'giorno': {
-        const giorni = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
-        cmp = giorni.indexOf(a.giorno) - giorni.indexOf(b.giorno);
-        break;
-      }
+      case 'giorno': cmp = giorni.indexOf(a.giorno) - giorni.indexOf(b.giorno); break;
     }
     return sortAsc ? cmp : -cmp;
   });
@@ -61,13 +58,19 @@ export default function ElencoClassi() {
 
   const handleEdit = (classe: Classe) => {
     setEditClass(classe);
-    setEditName(classe.nomeClasse);
+    setEditForm({
+      nomeClasse: classe.nomeClasse, idInsegnante: classe.idInsegnante.toString(), idTavolo: classe.idTavolo.toString(),
+      giorno: classe.giorno, oraInizio: classe.oraInizio, oraFine: classe.oraFine, livelloTarget: classe.livelloTarget,
+    });
   };
 
   const handleSaveEdit = () => {
-    if (!editClass) return;
-    setClassi(prev => prev.map(c => c.id === editClass.id ? { ...c, nomeClasse: editName } : c));
-    toast.success(`Classe "${editName}" aggiornata`);
+    if (!editClass || !editForm.nomeClasse) return;
+    setClassi(prev => prev.map(c => c.id === editClass.id ? {
+      ...c, nomeClasse: editForm.nomeClasse, idInsegnante: parseInt(editForm.idInsegnante), idTavolo: parseInt(editForm.idTavolo),
+      giorno: editForm.giorno as Giorno, oraInizio: editForm.oraInizio, oraFine: editForm.oraFine, livelloTarget: editForm.livelloTarget as Livello,
+    } : c));
+    toast.success(`Classe "${editForm.nomeClasse}" aggiornata`);
     setEditClass(null);
   };
 
@@ -83,10 +86,7 @@ export default function ElencoClassi() {
 
   const SortHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort(field)}>
-      <div className="flex items-center gap-1">
-        {children}
-        <ArrowUpDown className="h-3 w-3 text-muted-foreground" />
-      </div>
+      <div className="flex items-center gap-1">{children}<ArrowUpDown className="h-3 w-3 text-muted-foreground" /></div>
     </TableHead>
   );
 
@@ -102,9 +102,7 @@ export default function ElencoClassi() {
           <SelectTrigger className="w-48"><SelectValue placeholder="Insegnante..." /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Tutti gli insegnanti</SelectItem>
-            {insegnanti.map(u => u && (
-              <SelectItem key={u.id} value={u.id.toString()}>{u.nome} {u.cognome}</SelectItem>
-            ))}
+            {insegnanti.map(u => u && <SelectItem key={u.id} value={u.id.toString()}>{u.nome} {u.cognome}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={filterLivello} onValueChange={setFilterLivello}>
@@ -163,11 +161,55 @@ export default function ElencoClassi() {
       {/* Edit Dialog */}
       <Dialog open={!!editClass} onOpenChange={() => setEditClass(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Modifica Classe</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div><Label>Nome Classe</Label><Input value={editName} onChange={e => setEditName(e.target.value)} /></div>
+          <DialogHeader>
+            <DialogTitle>Modifica Classe</DialogTitle>
+            <DialogDescription>Modifica i dettagli della classe.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div><Label>Nome Classe</Label><Input value={editForm.nomeClasse} onChange={e => setEditForm({ ...editForm, nomeClasse: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Insegnante</Label>
+                <Select value={editForm.idInsegnante} onValueChange={v => setEditForm({ ...editForm, idInsegnante: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {insegnanti.map(u => u && <SelectItem key={u.id} value={u.id.toString()}>{u.nome} {u.cognome}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Livello</Label>
+                <Select value={editForm.livelloTarget} onValueChange={v => setEditForm({ ...editForm, livelloTarget: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{livelli.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Giorno</Label>
+                <Select value={editForm.giorno} onValueChange={v => setEditForm({ ...editForm, giorno: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{giorni.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Tavolo</Label>
+                <Select value={editForm.idTavolo} onValueChange={v => setEditForm({ ...editForm, idTavolo: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{tavoli.map(t => <SelectItem key={t.id} value={t.id.toString()}>{t.nomeTavolo}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Ora inizio</Label><Input type="time" value={editForm.oraInizio} onChange={e => setEditForm({ ...editForm, oraInizio: e.target.value })} /></div>
+              <div><Label>Ora fine</Label><Input type="time" value={editForm.oraFine} onChange={e => setEditForm({ ...editForm, oraFine: e.target.value })} /></div>
+            </div>
           </div>
-          <DialogFooter><Button onClick={handleSaveEdit}>Salva</Button></DialogFooter>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditClass(null)}>Annulla</Button>
+            <Button onClick={handleSaveEdit}>Salva</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -176,9 +218,7 @@ export default function ElencoClassi() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Eliminare la classe?</AlertDialogTitle>
-            <AlertDialogDescription>
-              La classe "{deleteClass?.nomeClasse}" verrà eliminata e gli studenti iscritti saranno rimessi in stato "In attesa classe".
-            </AlertDialogDescription>
+            <AlertDialogDescription>La classe "{deleteClass?.nomeClasse}" verrà eliminata e gli studenti iscritti saranno rimessi in stato "In attesa classe".</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Annulla</AlertDialogCancel>
