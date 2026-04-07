@@ -8,21 +8,26 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { toast } from 'sonner';
-import { Plus, Search, X, Clock } from 'lucide-react';
+import { Plus, Search, X, Clock, Pencil, Trash2 } from 'lucide-react';
 import type { Utente, ProfiloStudente, Giorno } from '@/data/types';
 
 const giorni: Giorno[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
 
 export default function Studenti() {
-  const { utenti, setUtenti, profiliStudenti, setProfiliStudenti, lingueParlate, setLingueParlate, disponibilita, setDisponibilita, classi, iscrizioniClassi, sessioniTest } = useStore();
+  const { utenti, setUtenti, profiliStudenti, setProfiliStudenti, lingueParlate, setLingueParlate, disponibilita, setDisponibilita, classi, iscrizioniClassi, setIscrizioniClassi, sessioniTest } = useStore();
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [showDetail, setShowDetail] = useState<number | null>(null);
   const [privacy, setPrivacy] = useState(false);
   const [form, setForm] = useState({ nome: '', cognome: '', email: '', telefono: '', dataNascita: '', nazionalita: '', lingue: '' });
   const [newSlots, setNewSlots] = useState<{ giorno: Giorno; oraInizio: string; oraFine: string }[]>([]);
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ nome: '', cognome: '', email: '', telefono: '', dataNascita: '', nazionalita: '', lingue: '', noteDidattiche: '' });
+  const [editSlots, setEditSlots] = useState<{ giorno: Giorno; oraInizio: string; oraFine: string }[]>([]);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const studenti = utenti.filter(u => !u.isVolontario);
   const filtered = studenti.filter(s => {
@@ -32,13 +37,12 @@ export default function Studenti() {
   });
 
   const getProfilo = (idUtente: number) => profiliStudenti.find(p => p.idUtente === idUtente);
-  const getLingue = (idUtente: number) => lingueParlate.filter(l => l.idUtente === idUtente).map(l => l.lingua).join(', ');
+  const getLingue = (idUtente: number) => lingueParlate.filter(l => l.idUtente === idUtente).map(l => l.lingua);
   const getDisp = (idUtente: number) => disponibilita.filter(d => d.idUtente === idUtente);
 
   const handleAdd = () => {
     if (!privacy) { toast.error('Il consenso privacy è obbligatorio'); return; }
     if (!form.nome || !form.cognome) { toast.error('Nome e cognome sono obbligatori'); return; }
-
     const newId = Math.max(...utenti.map(u => u.id), 0) + 1;
     const newUtente: Utente = {
       id: newId, nome: form.nome.trim(), cognome: form.cognome.trim(), email: form.email.trim(), telefono: form.telefono.trim(),
@@ -46,17 +50,14 @@ export default function Studenti() {
       consensoPrivacy: true, isSocio: false, isVolontario: false,
     };
     const newProfilo: ProfiloStudente = { id: profiliStudenti.length + 1, idUtente: newId, statoScuola: 'In attesa test' };
-
     setUtenti(prev => [...prev, newUtente]);
     setProfiliStudenti(prev => [...prev, newProfilo]);
     if (form.lingue.trim()) {
-      const newLingue = form.lingue.split(',').map(l => ({ idUtente: newId, lingua: l.trim() }));
-      setLingueParlate(prev => [...prev, ...newLingue]);
+      setLingueParlate(prev => [...prev, ...form.lingue.split(',').map(l => ({ idUtente: newId, lingua: l.trim() }))]);
     }
     if (newSlots.length > 0) {
       const maxDispId = Math.max(...disponibilita.map(d => d.id), 0);
-      const newDisps = newSlots.map((s, i) => ({ id: maxDispId + i + 1, idUtente: newId, ...s }));
-      setDisponibilita(prev => [...prev, ...newDisps]);
+      setDisponibilita(prev => [...prev, ...newSlots.map((s, i) => ({ id: maxDispId + i + 1, idUtente: newId, ...s }))]);
     }
     setShowAdd(false);
     setForm({ nome: '', cognome: '', email: '', telefono: '', dataNascita: '', nazionalita: '', lingue: '' });
@@ -71,23 +72,52 @@ export default function Studenti() {
   const detailClassi = showDetail ? iscrizioniClassi.filter(ic => ic.idStudente === showDetail).map(ic => classi.find(c => c.id === ic.idClasse)).filter(Boolean) : [];
   const detailTests = showDetail ? sessioniTest.filter(s => s.studentiConvocati.includes(showDetail)) : [];
 
-  // Availability editing in detail
-  const [editSlots, setEditSlots] = useState<{ giorno: Giorno; oraInizio: string; oraFine: string }[]>([]);
-  const [editingAvail, setEditingAvail] = useState(false);
-
-  const startEditAvail = () => {
+  const startEdit = () => {
+    if (!detailUser) return;
+    const lingue = showDetail ? getLingue(showDetail).join(', ') : '';
+    setEditForm({
+      nome: detailUser.nome, cognome: detailUser.cognome, email: detailUser.email, telefono: detailUser.telefono,
+      dataNascita: detailUser.dataNascita, nazionalita: detailUser.nazionalita, lingue,
+      noteDidattiche: detailProfilo?.noteDidattiche || '',
+    });
     setEditSlots(detailSlots.map(s => ({ giorno: s.giorno, oraInizio: s.oraInizio, oraFine: s.oraFine })));
-    setEditingAvail(true);
+    setEditing(true);
   };
 
-  const saveAvail = () => {
-    if (!showDetail) return;
+  const saveEdit = () => {
+    if (!showDetail || !editForm.nome || !editForm.cognome) { toast.error('Nome e cognome sono obbligatori'); return; }
+    setUtenti(prev => prev.map(u => u.id === showDetail ? {
+      ...u, nome: editForm.nome.trim(), cognome: editForm.cognome.trim(), email: editForm.email.trim(),
+      telefono: editForm.telefono.trim(), dataNascita: editForm.dataNascita, nazionalita: editForm.nazionalita.trim(),
+    } : u));
+    // Update lingue
+    setLingueParlate(prev => {
+      const without = prev.filter(l => l.idUtente !== showDetail);
+      const newL = editForm.lingue.split(',').map(l => l.trim()).filter(Boolean).map(l => ({ idUtente: showDetail, lingua: l }));
+      return [...without, ...newL];
+    });
+    // Update note didattiche
+    setProfiliStudenti(prev => prev.map(p => p.idUtente === showDetail ? { ...p, noteDidattiche: editForm.noteDidattiche || undefined } : p));
+    // Update disponibilità
     const withoutOld = disponibilita.filter(d => d.idUtente !== showDetail);
     const maxId = Math.max(...disponibilita.map(d => d.id), 0);
     const newDisps = editSlots.map((s, i) => ({ id: maxId + i + 1, idUtente: showDetail, ...s }));
     setDisponibilita([...withoutOld, ...newDisps]);
-    setEditingAvail(false);
-    toast.success('Disponibilità aggiornate');
+    setEditing(false);
+    toast.success('Studente aggiornato');
+  };
+
+  const handleDelete = () => {
+    if (!deleteId) return;
+    setUtenti(prev => prev.filter(u => u.id !== deleteId));
+    setProfiliStudenti(prev => prev.filter(p => p.idUtente !== deleteId));
+    setLingueParlate(prev => prev.filter(l => l.idUtente !== deleteId));
+    setDisponibilita(prev => prev.filter(d => d.idUtente !== deleteId));
+    setIscrizioniClassi(prev => prev.filter(ic => ic.idStudente !== deleteId));
+    toast.success('Studente eliminato');
+    setDeleteId(null);
+    setShowDetail(null);
+    setEditing(false);
   };
 
   return (
@@ -120,10 +150,10 @@ export default function Studenti() {
             {filtered.map(s => {
               const profilo = getProfilo(s.id);
               return (
-                <TableRow key={s.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setShowDetail(s.id); setEditingAvail(false); }}>
+                <TableRow key={s.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setShowDetail(s.id); setEditing(false); }}>
                   <TableCell className="font-medium">{s.nome} {s.cognome}</TableCell>
                   <TableCell className="hidden sm:table-cell">{s.nazionalita}</TableCell>
-                  <TableCell className="hidden md:table-cell">{getLingue(s.id) || '—'}</TableCell>
+                  <TableCell className="hidden md:table-cell">{getLingue(s.id).join(', ') || '—'}</TableCell>
                   <TableCell className="hidden md:table-cell">{profilo?.livelloRaggiunto || '—'}</TableCell>
                   <TableCell>{profilo && <StatusBadge stato={profilo.statoScuola} />}</TableCell>
                 </TableRow>
@@ -137,79 +167,115 @@ export default function Studenti() {
       </div>
 
       {/* Detail Dialog */}
-      <Dialog open={!!showDetail} onOpenChange={(open) => { if (!open) { setShowDetail(null); setEditingAvail(false); } }}>
+      <Dialog open={!!showDetail} onOpenChange={(open) => { if (!open) { setShowDetail(null); setEditing(false); } }}>
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{detailUser?.nome} {detailUser?.cognome}</DialogTitle>
             <DialogDescription>{detailUser?.nazionalita} — Iscritto il {detailUser?.dataIscrizione}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div><span className="text-muted-foreground">Email:</span> {detailUser?.email || '—'}</div>
-              <div><span className="text-muted-foreground">Telefono:</span> {detailUser?.telefono || '—'}</div>
-              <div><span className="text-muted-foreground">Data nascita:</span> {detailUser?.dataNascita || '—'}</div>
-              <div><span className="text-muted-foreground">Lingue:</span> {showDetail ? getLingue(showDetail) || '—' : '—'}</div>
-            </div>
 
-            {detailProfilo && (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-sm">Stato:</span>
-                  <StatusBadge stato={detailProfilo.statoScuola} />
+          {!editing ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><span className="text-muted-foreground">Email:</span> {detailUser?.email || '—'}</div>
+                <div><span className="text-muted-foreground">Telefono:</span> {detailUser?.telefono || '—'}</div>
+                <div><span className="text-muted-foreground">Data nascita:</span> {detailUser?.dataNascita || '—'}</div>
+                <div><span className="text-muted-foreground">Nazionalità:</span> {detailUser?.nazionalita || '—'}</div>
+                <div className="col-span-2"><span className="text-muted-foreground">Lingue:</span> {showDetail ? getLingue(showDetail).join(', ') || '—' : '—'}</div>
+              </div>
+
+              {detailProfilo && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm">Stato:</span>
+                    <StatusBadge stato={detailProfilo.statoScuola} />
+                  </div>
+                  {detailProfilo.livelloRaggiunto && <p className="text-sm"><span className="text-muted-foreground">Livello:</span> {detailProfilo.livelloRaggiunto}</p>}
+                  {detailProfilo.dataUltimoTest && <p className="text-sm"><span className="text-muted-foreground">Ultimo test:</span> {detailProfilo.dataUltimoTest}</p>}
+                  {detailProfilo.noteDidattiche && <p className="text-sm"><span className="text-muted-foreground">Note:</span> {detailProfilo.noteDidattiche}</p>}
                 </div>
-                {detailProfilo.livelloRaggiunto && <p className="text-sm"><span className="text-muted-foreground">Livello:</span> {detailProfilo.livelloRaggiunto}</p>}
-                {detailProfilo.dataUltimoTest && <p className="text-sm"><span className="text-muted-foreground">Ultimo test:</span> {detailProfilo.dataUltimoTest}</p>}
-                {detailProfilo.noteDidattiche && <p className="text-sm"><span className="text-muted-foreground">Note:</span> {detailProfilo.noteDidattiche}</p>}
-              </div>
-            )}
+              )}
 
-            {/* Disponibilità */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="space-y-2">
                 <p className="font-medium text-sm flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> Disponibilità Orarie</p>
-                <Button size="sm" variant="outline" onClick={editingAvail ? saveAvail : startEditAvail}>
-                  {editingAvail ? 'Salva' : 'Modifica'}
-                </Button>
-              </div>
-              {!editingAvail ? (
                 <div className="flex flex-wrap gap-1">
                   {detailSlots.length === 0 && <span className="text-sm text-muted-foreground">Nessuna disponibilità</span>}
                   {detailSlots.map(s => (
                     <Badge key={s.id} variant="outline" className="text-xs">{s.giorno} {s.oraInizio}–{s.oraFine}</Badge>
                   ))}
                 </div>
-              ) : (
-                <AvailabilityEditor slots={editSlots} onChange={setEditSlots} />
+              </div>
+
+              {detailClassi.length > 0 && (
+                <div className="space-y-1">
+                  <p className="font-medium text-sm">Classi</p>
+                  {detailClassi.map(c => c && (
+                    <Badge key={c.id} variant="secondary" className="mr-1">{c.nomeClasse} — {c.giorno} {c.oraInizio}</Badge>
+                  ))}
+                </div>
               )}
+
+              {detailTests.length > 0 && (
+                <div className="space-y-1">
+                  <p className="font-medium text-sm">Storico Test</p>
+                  {detailTests.map(t => {
+                    const res = t.risultati.find(r => r.idStudente === showDetail);
+                    return (
+                      <p key={t.id} className="text-sm text-muted-foreground">
+                        {t.data} — {res ? `Livello: ${res.livello}` : 'Convocato'} {res?.note ? `(${res.note})` : ''}
+                      </p>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2 border-t">
+                <Button onClick={startEdit} className="gap-2"><Pencil className="h-4 w-4" />Modifica</Button>
+                <Button variant="destructive" onClick={() => showDetail && setDeleteId(showDetail)} className="gap-2"><Trash2 className="h-4 w-4" />Elimina</Button>
+              </div>
             </div>
-
-            {/* Classi assegnate */}
-            {detailClassi.length > 0 && (
-              <div className="space-y-1">
-                <p className="font-medium text-sm">Classi</p>
-                {detailClassi.map(c => c && (
-                  <Badge key={c.id} variant="secondary" className="mr-1">{c.nomeClasse} — {c.giorno} {c.oraInizio}</Badge>
-                ))}
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div><Label>Nome *</Label><Input value={editForm.nome} onChange={e => setEditForm({ ...editForm, nome: e.target.value })} /></div>
+                <div><Label>Cognome *</Label><Input value={editForm.cognome} onChange={e => setEditForm({ ...editForm, cognome: e.target.value })} /></div>
               </div>
-            )}
-
-            {/* Test history */}
-            {detailTests.length > 0 && (
-              <div className="space-y-1">
-                <p className="font-medium text-sm">Storico Test</p>
-                {detailTests.map(t => {
-                  const res = t.risultati.find(r => r.idStudente === showDetail);
-                  return (
-                    <p key={t.id} className="text-sm text-muted-foreground">
-                      {t.data} — {res ? `Livello: ${res.livello}` : 'Convocato'} {res?.note ? `(${res.note})` : ''}
-                    </p>
-                  );
-                })}
+              <div><Label>Email</Label><Input type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} /></div>
+              <div><Label>Telefono</Label><Input value={editForm.telefono} onChange={e => setEditForm({ ...editForm, telefono: e.target.value })} /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><Label>Data di nascita</Label><Input type="date" value={editForm.dataNascita} onChange={e => setEditForm({ ...editForm, dataNascita: e.target.value })} /></div>
+                <div><Label>Nazionalità</Label><Input value={editForm.nazionalita} onChange={e => setEditForm({ ...editForm, nazionalita: e.target.value })} /></div>
               </div>
-            )}
-          </div>
+              <div><Label>Lingue parlate (separate da virgola)</Label><Input value={editForm.lingue} onChange={e => setEditForm({ ...editForm, lingue: e.target.value })} /></div>
+              <div><Label>Note didattiche</Label><Input value={editForm.noteDidattiche} onChange={e => setEditForm({ ...editForm, noteDidattiche: e.target.value })} /></div>
+
+              <div>
+                <Label>Disponibilità Orarie</Label>
+                <AvailabilityEditor slots={editSlots} onChange={setEditSlots} />
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setEditing(false)}>Annulla</Button>
+                <Button onClick={saveEdit}>Salva</Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirm */}
+      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminare lo studente?</AlertDialogTitle>
+            <AlertDialogDescription>Lo studente verrà rimosso da tutte le classi e i dati saranno eliminati definitivamente.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Elimina</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Add Dialog */}
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
@@ -230,13 +296,10 @@ export default function Studenti() {
               <div><Label>Nazionalità</Label><Input value={form.nazionalita} onChange={e => setForm({...form, nazionalita: e.target.value})} /></div>
             </div>
             <div><Label>Lingue parlate (separate da virgola)</Label><Input placeholder="es. Arabo, Francese" value={form.lingue} onChange={e => setForm({...form, lingue: e.target.value})} /></div>
-
-            {/* Disponibilità */}
             <div>
               <Label>Disponibilità Orarie</Label>
               <AvailabilityEditor slots={newSlots} onChange={setNewSlots} />
             </div>
-
             <div className="flex items-start gap-3 p-4 rounded-lg border bg-muted/50">
               <Checkbox id="privacy" checked={privacy} onCheckedChange={(v) => setPrivacy(v === true)} className="mt-0.5" />
               <Label htmlFor="privacy" className="text-sm leading-relaxed cursor-pointer">
@@ -256,30 +319,21 @@ export default function Studenti() {
 
 function AvailabilityEditor({ slots, onChange }: { slots: { giorno: Giorno; oraInizio: string; oraFine: string }[]; onChange: (s: { giorno: Giorno; oraInizio: string; oraFine: string }[]) => void }) {
   const giorni: Giorno[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
-
-  const addSlot = () => onChange([...slots, { giorno: 'Lunedì', oraInizio: '09:00', oraFine: '11:00' }]);
-  const removeSlot = (i: number) => onChange(slots.filter((_, idx) => idx !== i));
-  const updateSlot = (i: number, field: string, value: string) => {
-    const updated = [...slots];
-    updated[i] = { ...updated[i], [field]: value };
-    onChange(updated);
-  };
-
   return (
     <div className="space-y-2 mt-1">
       {slots.map((slot, i) => (
         <div key={i} className="flex items-center gap-2">
-          <Select value={slot.giorno} onValueChange={v => updateSlot(i, 'giorno', v)}>
+          <Select value={slot.giorno} onValueChange={v => { const u = [...slots]; u[i] = { ...u[i], giorno: v as Giorno }; onChange(u); }}>
             <SelectTrigger className="w-28 h-8 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>{giorni.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
           </Select>
-          <Input type="time" value={slot.oraInizio} onChange={e => updateSlot(i, 'oraInizio', e.target.value)} className="w-24 h-8 text-xs" />
+          <Input type="time" value={slot.oraInizio} onChange={e => { const u = [...slots]; u[i] = { ...u[i], oraInizio: e.target.value }; onChange(u); }} className="w-24 h-8 text-xs" />
           <span className="text-xs text-muted-foreground">–</span>
-          <Input type="time" value={slot.oraFine} onChange={e => updateSlot(i, 'oraFine', e.target.value)} className="w-24 h-8 text-xs" />
-          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => removeSlot(i)}><X className="h-3 w-3" /></Button>
+          <Input type="time" value={slot.oraFine} onChange={e => { const u = [...slots]; u[i] = { ...u[i], oraFine: e.target.value }; onChange(u); }} className="w-24 h-8 text-xs" />
+          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => onChange(slots.filter((_, idx) => idx !== i))}><X className="h-3 w-3" /></Button>
         </div>
       ))}
-      <Button size="sm" variant="outline" onClick={addSlot} className="text-xs">+ Aggiungi slot</Button>
+      <Button size="sm" variant="outline" onClick={() => onChange([...slots, { giorno: 'Lunedì', oraInizio: '09:00', oraFine: '11:00' }])} className="text-xs">+ Aggiungi slot</Button>
     </div>
   );
 }
