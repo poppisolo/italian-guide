@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useStore } from '@/data/store';
+import { useStudenti, useUpdateStudente, useInsegnanti, useClassi, useAddClasse, useIscrizioni, useAddIscrizione, type Classe } from '@/hooks/useSupabase';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -8,167 +8,98 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Sparkles, ArrowRight, ArrowLeft, Check, AlertTriangle } from 'lucide-react';
-import type { Livello, Giorno, Classe } from '@/data/types';
-
-const SAFETY_MARGIN = 2;
+import { Sparkles, ArrowRight, ArrowLeft, Check, AlertTriangle, Loader2 } from 'lucide-react';
 
 export default function ClassBuilder() {
-  const { utenti, profiliStudenti, setProfiliStudenti, profiliVolontari, disponibilita, tavoli, classi, setClassi, iscrizioniClassi, setIscrizioniClassi } = useStore();
+  const { data: studenti = [], isLoading: loadingS } = useStudenti();
+  const { data: insegnanti = [], isLoading: loadingI } = useInsegnanti();
+  const { data: classi = [] } = useClassi();
+  const { data: iscrizioni = [] } = useIscrizioni();
+  const addClasse = useAddClasse();
+  const addIscrizione = useAddIscrizione();
+  const updateStudente = useUpdateStudente();
 
   const [step, setStep] = useState(0);
-  const [selectedTeacher, setSelectedTeacher] = useState<number | null>(null);
-  const [selectedSlot, setSelectedSlot] = useState<{ giorno: Giorno; oraInizio: string; oraFine: string } | null>(null);
-  const [selectedStudents, setSelectedStudents] = useState<number[]>([]);
-  const [selectedTavolo, setSelectedTavolo] = useState<number | null>(null);
+  const [selectedTeacher, setSelectedTeacher] = useState<string | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<{ giorno: string; oraInizio: string; oraFine: string } | null>(null);
+  const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
+  const [selectedAula, setSelectedAula] = useState('');
   const [className, setClassName] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
 
-  const getUtente = (id: number) => utenti.find(u => u.id === id);
-  const teacherVolontari = profiliVolontari.map(v => ({ ...v, utente: getUtente(v.idUtente)! }));
-  const selectedVolontario = profiliVolontari.find(v => v.idUtente === selectedTeacher);
-  const teacherSlots = selectedTeacher ? disponibilita.filter(d => d.idUtente === selectedTeacher) : [];
+  const teacher = insegnanti.find(i => i.id === selectedTeacher);
+  const teacherSlots = teacher ? (teacher.disponibilita || []) as { giorno: string; oraInizio: string; oraFine: string }[] : [];
 
-  // Check if teacher already has a class in the same slot
+  // Check teacher conflict
   const teacherConflict = (() => {
     if (!selectedTeacher || !selectedSlot) return null;
-    const conflict = classi.find(c =>
-      c.idInsegnante === selectedTeacher &&
-      c.giorno === selectedSlot.giorno &&
-      c.oraInizio === selectedSlot.oraInizio &&
-      c.oraFine === selectedSlot.oraFine
-    );
-    return conflict || null;
+    return classi.find(c =>
+      c.insegnante_id === selectedTeacher &&
+      c.giorno_settimana === selectedSlot.giorno &&
+      c.orario_inizio === selectedSlot.oraInizio &&
+      c.orario_fine === selectedSlot.oraFine
+    ) || null;
   })();
 
-  // Table availability analysis for the selected slot
-  const getTableStatus = (tavoloId: number) => {
-    if (!selectedSlot) return { usedSeats: 0, available: true, sharedWith: null as Classe | null };
-    const classesOnTable = classi.filter(c =>
-      c.idTavolo === tavoloId &&
-      c.giorno === selectedSlot.giorno &&
-      c.oraInizio === selectedSlot.oraInizio
-    );
-    const usedSeats = classesOnTable.reduce((sum, c) =>
-      sum + iscrizioniClassi.filter(ic => ic.idClasse === c.id).length, 0);
-    return {
-      usedSeats,
-      available: classesOnTable.length === 0,
-      sharedWith: classesOnTable[0] || null,
-    };
-  };
-
-  // Check if all tables are occupied in this slot
-  const allTablesOccupied = selectedSlot ? tavoli.every(t => {
-    const status = getTableStatus(t.id);
-    return !status.available;
-  }) : false;
-
-  // Step 1: compatible students — level is preference, not constraint
+  // Compatible students
   const compatibleStudents = (() => {
     if (!selectedSlot) return [];
-    const studentiAttesa = profiliStudenti.filter(p => p.statoScuola === 'In attesa classe');
-    return studentiAttesa.filter(p => {
-      const stuSlots = disponibilita.filter(d => d.idUtente === p.idUtente);
-      return stuSlots.some(s => s.giorno === selectedSlot.giorno && s.oraInizio === selectedSlot.oraInizio);
-    }).sort((a, b) => {
-      // Preferred level students first, then by enrollment date
-      const prefLevel = selectedVolontario?.livelloPreferito;
-      const aMatch = prefLevel && a.livelloRaggiunto === prefLevel ? 0 : 1;
-      const bMatch = prefLevel && b.livelloRaggiunto === prefLevel ? 0 : 1;
-      if (aMatch !== bMatch) return aMatch - bMatch;
-      const uA = getUtente(a.idUtente);
-      const uB = getUtente(b.idUtente);
-      return (uA?.dataIscrizione || '').localeCompare(uB?.dataIscrizione || '');
-    });
+    return studenti
+      .filter(s => s.stato_scuola === 'In attesa classe')
+      .filter(s => {
+        const slots = (s.disponibilita || []) as { giorno: string; oraInizio: string; oraFine: string }[];
+        return slots.some(sl => sl.giorno === selectedSlot.giorno && sl.oraInizio === selectedSlot.oraInizio);
+      })
+      .sort((a, b) => {
+        const pref = teacher?.livello_preferito;
+        const aMatch = pref && a.livello === pref ? 0 : 1;
+        const bMatch = pref && b.livello === pref ? 0 : 1;
+        if (aMatch !== bMatch) return aMatch - bMatch;
+        return (a.created_at || '').localeCompare(b.created_at || '');
+      });
   })();
 
   const handleAiSuggest = () => {
     setAiLoading(true);
     setTimeout(() => {
-      // AI suggests: prefer matching level, then pick best table
-      const prefLevel = selectedVolontario?.livelloPreferito;
-      const suggested = compatibleStudents.filter(s =>
-        !prefLevel || s.livelloRaggiunto === prefLevel
-      ).map(s => s.idUtente);
-      setSelectedStudents(suggested.length > 0 ? suggested : compatibleStudents.map(s => s.idUtente));
-
-      // AI also suggests best table
-      const freeTables = tavoli.filter(t => getTableStatus(t.id).available);
-      if (freeTables.length > 0) {
-        const best = freeTables.sort((a, b) => {
-          const needed = suggested.length || compatibleStudents.length;
-          return Math.abs(a.capacitaMax - needed) - Math.abs(b.capacitaMax - needed);
-        })[0];
-        setSelectedTavolo(best.id);
-        toast.success(`IA suggerisce ${suggested.length || compatibleStudents.length} studenti e il tavolo "${best.nomeTavolo}" (capienza ottimale).`);
-      } else if (allTablesOccupied) {
-        // Find table with most remaining capacity
-        const bestShared = tavoli.sort((a, b) => {
-          const statusA = getTableStatus(a.id);
-          const statusB = getTableStatus(b.id);
-          return (b.capacitaMax - statusB.usedSeats) - (a.capacitaMax - statusA.usedSeats);
-        })[0];
-        const status = getTableStatus(bestShared.id);
-        const remaining = bestShared.capacitaMax - status.usedSeats - SAFETY_MARGIN;
-        if (remaining > 0) {
-          setSelectedTavolo(bestShared.id);
-          toast.info(`IA: tutti i tavoli sono occupati. Suggerito "${bestShared.nomeTavolo}" in condivisione (${remaining} posti disponibili con margine di sicurezza).`);
-        } else {
-          toast.error('IA: nessun tavolo disponibile con capienza sufficiente in questa fascia oraria.');
-        }
-      } else {
-        toast.success(`IA suggerisce ${suggested.length || compatibleStudents.length} studenti compatibili.`);
-      }
-
+      const pref = teacher?.livello_preferito;
+      const suggested = compatibleStudents.filter(s => !pref || s.livello === pref).map(s => s.id);
+      setSelectedStudents(suggested.length > 0 ? suggested : compatibleStudents.map(s => s.id));
+      toast.success(`IA suggerisce ${suggested.length || compatibleStudents.length} studenti compatibili.`);
       setAiLoading(false);
     }, 1500);
   };
 
-  const handleConfirm = () => {
-    if (!selectedTeacher || !selectedSlot || !selectedTavolo || selectedStudents.length === 0) return;
-
-    // Final validation: teacher conflict
+  const handleConfirm = async () => {
+    if (!selectedTeacher || !selectedSlot || selectedStudents.length === 0) return;
     if (teacherConflict) {
-      toast.error(`L'insegnante è già impegnato in "${teacherConflict.nomeClasse}" in questa fascia oraria.`);
+      toast.error(`L'insegnante è già impegnato in "${teacherConflict.nome}" in questa fascia oraria.`);
       return;
     }
-
-    // Table capacity validation
-    const tableStatus = getTableStatus(selectedTavolo);
-    const tavolo = tavoli.find(t => t.id === selectedTavolo)!;
-    const totalStudents = tableStatus.usedSeats + selectedStudents.length;
-
-    if (!tableStatus.available && !allTablesOccupied) {
-      toast.error('Questo tavolo è già occupato e ci sono altri tavoli liberi. Seleziona un tavolo libero.');
-      return;
-    }
-
-    if (!tableStatus.available && totalStudents > tavolo.capacitaMax - SAFETY_MARGIN) {
-      toast.error(`Capienza insufficiente: ${totalStudents} studenti totali superano il limite di ${tavolo.capacitaMax - SAFETY_MARGIN} (con margine di sicurezza).`);
-      return;
-    }
-
-    const newClass: Classe = {
-      id: Math.max(...classi.map(c => c.id), 0) + 1,
-      nomeClasse: className || `${selectedVolontario?.livelloPreferito || ''} ${selectedSlot.giorno}`,
-      idInsegnante: selectedTeacher,
-      idTavolo: selectedTavolo,
-      giorno: selectedSlot.giorno,
-      oraInizio: selectedSlot.oraInizio,
-      oraFine: selectedSlot.oraFine,
-      livelloTarget: selectedVolontario?.livelloPreferito || 'A1',
-    };
-    setClassi(prev => [...prev, newClass]);
-    selectedStudents.forEach(idStu => {
-      setIscrizioniClassi(prev => [...prev, { idClasse: newClass.id, idStudente: idStu }]);
-    });
-    setProfiliStudenti(prev => prev.map(p => selectedStudents.includes(p.idUtente) ? { ...p, statoScuola: 'Assegnato' as const } : p));
-    toast.success(`Classe "${newClass.nomeClasse}" creata con ${selectedStudents.length} studenti`);
-    setStep(0); setSelectedTeacher(null); setSelectedSlot(null); setSelectedStudents([]); setSelectedTavolo(null); setClassName('');
+    try {
+      const newClass = await addClasse.mutateAsync({
+        nome: className || `${teacher?.livello_preferito || ''} ${selectedSlot.giorno}`,
+        livello: teacher?.livello_preferito || null,
+        giorno_settimana: selectedSlot.giorno,
+        orario_inizio: selectedSlot.oraInizio,
+        orario_fine: selectedSlot.oraFine,
+        aula: selectedAula || null,
+        insegnante_id: selectedTeacher,
+      });
+      for (const sid of selectedStudents) {
+        await addIscrizione.mutateAsync({ studente_id: sid, classe_id: newClass.id, data_iscrizione: new Date().toISOString().split('T')[0], attiva: true });
+        await updateStudente.mutateAsync({ id: sid, stato_scuola: 'Assegnato' });
+      }
+      toast.success(`Classe "${newClass.nome}" creata con ${selectedStudents.length} studenti`);
+      setStep(0); setSelectedTeacher(null); setSelectedSlot(null); setSelectedStudents([]); setSelectedAula(''); setClassName('');
+    } catch { toast.error('Errore durante la creazione della classe'); }
   };
 
-  const steps = ['Insegnante', 'Smart Filter', 'Tavolo', 'Conferma'];
+  const steps = ['Insegnante', 'Smart Filter', 'Conferma'];
+
+  if (loadingS || loadingI) {
+    return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -193,19 +124,19 @@ export default function ClassBuilder() {
       {/* Step 0: Select Teacher */}
       {step === 0 && (
         <div className="grid gap-4 sm:grid-cols-2">
-          {teacherVolontari.map(v => (
-            <Card key={v.id} className={`cursor-pointer transition-all ${selectedTeacher === v.idUtente ? 'ring-2 ring-primary' : 'hover:shadow-md'}`}
-              onClick={() => { setSelectedTeacher(v.idUtente); setSelectedSlot(null); }}>
+          {insegnanti.map(v => (
+            <Card key={v.id} className={`cursor-pointer transition-all ${selectedTeacher === v.id ? 'ring-2 ring-primary' : 'hover:shadow-md'}`}
+              onClick={() => { setSelectedTeacher(v.id); setSelectedSlot(null); }}>
               <CardHeader>
-                <CardTitle>{v.utente.nome} {v.utente.cognome}</CardTitle>
+                <CardTitle>{v.nome} {v.cognome}</CardTitle>
                 <CardDescription>
-                  Livello preferito: <Badge variant="secondary">{v.livelloPreferito || 'Nessuno'}</Badge>
+                  Livello preferito: <Badge variant="secondary">{v.livello_preferito || 'Nessuno'}</Badge>
                   <span className="text-xs ml-1">(preferenza, non vincolo)</span>
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground mb-2">{v.noteMetodologiche}</p>
-                <p className="text-xs text-muted-foreground">Scadenza socio: {v.dataScadenzaSocio}</p>
+                {v.note_metodologiche && <p className="text-sm text-muted-foreground mb-2">{v.note_metodologiche}</p>}
+                <p className="text-xs text-muted-foreground">Scadenza socio: {v.data_scadenza_socio || '—'}</p>
               </CardContent>
             </Card>
           ))}
@@ -217,37 +148,35 @@ export default function ClassBuilder() {
           <CardHeader><CardTitle className="text-base">Disponibilità</CardTitle></CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
-              {teacherSlots.map(slot => {
+              {teacherSlots.map((slot, i) => {
                 const conflict = classi.find(c =>
-                  c.idInsegnante === selectedTeacher &&
-                  c.giorno === slot.giorno &&
-                  c.oraInizio === slot.oraInizio
+                  c.insegnante_id === selectedTeacher &&
+                  c.giorno_settimana === slot.giorno &&
+                  c.orario_inizio === slot.oraInizio
                 );
                 return (
-                  <div key={slot.id} className="relative">
-                    <Button
-                      variant={selectedSlot?.giorno === slot.giorno && selectedSlot?.oraInizio === slot.oraInizio ? 'default' : conflict ? 'outline' : 'outline'}
-                      onClick={() => {
-                        if (conflict) {
-                          toast.error(`⚠ ${getUtente(selectedTeacher)?.nome} è già impegnato/a in "${conflict.nomeClasse}" — ${slot.giorno} ${slot.oraInizio}–${slot.oraFine}`);
-                          return;
-                        }
-                        setSelectedSlot({ giorno: slot.giorno, oraInizio: slot.oraInizio, oraFine: slot.oraFine });
-                      }}
-                      size="sm"
-                      className={conflict ? 'opacity-50 line-through' : ''}
-                    >
-                      {slot.giorno} {slot.oraInizio}–{slot.oraFine}
-                      {conflict && <AlertTriangle className="h-3 w-3 ml-1 text-destructive" />}
-                    </Button>
-                  </div>
+                  <Button key={i}
+                    variant={selectedSlot?.giorno === slot.giorno && selectedSlot?.oraInizio === slot.oraInizio ? 'default' : 'outline'}
+                    onClick={() => {
+                      if (conflict) {
+                        toast.error(`⚠ ${teacher?.nome} è già impegnato/a in "${conflict.nome}" — ${slot.giorno} ${slot.oraInizio}–${slot.oraFine}`);
+                        return;
+                      }
+                      setSelectedSlot(slot);
+                    }}
+                    size="sm"
+                    className={conflict ? 'opacity-50 line-through' : ''}
+                  >
+                    {slot.giorno} {slot.oraInizio}–{slot.oraFine}
+                    {conflict && <AlertTriangle className="h-3 w-3 ml-1 text-destructive" />}
+                  </Button>
                 );
               })}
             </div>
             {teacherConflict && (
               <p className="text-sm text-destructive mt-3 flex items-center gap-1">
                 <AlertTriangle className="h-4 w-4" />
-                Questa fascia oraria è già occupata dalla classe "{teacherConflict.nomeClasse}"
+                Questa fascia oraria è già occupata dalla classe "{teacherConflict.nome}"
               </p>
             )}
           </CardContent>
@@ -262,9 +191,6 @@ export default function ClassBuilder() {
               <CardTitle>Studenti Compatibili</CardTitle>
               <CardDescription>
                 {compatibleStudents.length} studenti trovati per {selectedSlot?.giorno} {selectedSlot?.oraInizio}–{selectedSlot?.oraFine}
-                {selectedVolontario?.livelloPreferito && (
-                  <span className="ml-1">(preferenza livello: {selectedVolontario.livelloPreferito})</span>
-                )}
               </CardDescription>
             </div>
             <Button onClick={handleAiSuggest} disabled={aiLoading} className="gap-2 bg-[hsl(33,76%,51%)] hover:bg-[hsl(33,76%,45%)] text-primary-foreground">
@@ -272,22 +198,26 @@ export default function ClassBuilder() {
             </Button>
           </CardHeader>
           <CardContent>
+            <div className="space-y-4 mb-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div><Label>Nome Classe</Label><Input value={className} onChange={e => setClassName(e.target.value)} placeholder={`es. ${teacher?.livello_preferito || ''} ${selectedSlot?.giorno || ''}`} /></div>
+                <div><Label>Aula / Tavolo</Label><Input value={selectedAula} onChange={e => setSelectedAula(e.target.value)} placeholder="es. Aula 1 - Tavolo A" /></div>
+              </div>
+            </div>
             {compatibleStudents.length === 0 ? (
               <p className="text-muted-foreground py-4 text-center">Nessuno studente compatibile trovato</p>
             ) : (
               <div className="space-y-2">
-                {compatibleStudents.map(p => {
-                  const u = getUtente(p.idUtente);
-                  const isPreferred = selectedVolontario?.livelloPreferito && p.livelloRaggiunto === selectedVolontario.livelloPreferito;
+                {compatibleStudents.map(s => {
+                  const isPreferred = teacher?.livello_preferito && s.livello === teacher.livello_preferito;
                   return (
-                    <div key={p.id} className={`flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 ${isPreferred ? 'bg-accent/30' : ''}`}>
-                      <Checkbox checked={selectedStudents.includes(p.idUtente)} onCheckedChange={v => setSelectedStudents(prev => v ? [...prev, p.idUtente] : prev.filter(id => id !== p.idUtente))} />
+                    <div key={s.id} className={`flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 ${isPreferred ? 'bg-accent/30' : ''}`}>
+                      <Checkbox checked={selectedStudents.includes(s.id)} onCheckedChange={v => setSelectedStudents(prev => v ? [...prev, s.id] : prev.filter(id => id !== s.id))} />
                       <div className="flex-1">
-                        <span className="font-medium">{u?.nome} {u?.cognome}</span>
-                        <span className="text-sm text-muted-foreground ml-2">— {u?.nazionalita} — Livello: {p.livelloRaggiunto}</span>
+                        <span className="font-medium">{s.nome} {s.cognome}</span>
+                        <span className="text-sm text-muted-foreground ml-2">— {s.nazionalita} — Livello: {s.livello || '—'}</span>
                         {isPreferred && <Badge variant="outline" className="ml-2 text-xs">Livello preferito</Badge>}
                       </div>
-                      <span className="text-xs text-muted-foreground">Iscritto: {u?.dataIscrizione}</span>
                     </div>
                   );
                 })}
@@ -297,100 +227,18 @@ export default function ClassBuilder() {
         </Card>
       )}
 
-      {/* Step 2: Assign Table */}
+      {/* Step 2: Confirm */}
       {step === 2 && (
-        <Card>
-          <CardHeader><CardTitle>Assegna Tavolo</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label>Nome Classe</Label>
-              <Input value={className} onChange={e => setClassName(e.target.value)} placeholder={`es. ${selectedVolontario?.livelloPreferito || ''} ${selectedSlot?.giorno || ''}`} />
-            </div>
-            <div>
-              <Label>Tavolo / Aula</Label>
-              <div className="grid gap-2 mt-2">
-                {tavoli.map(t => {
-                  const status = getTableStatus(t.id);
-                  const remaining = t.capacitaMax - status.usedSeats;
-                  const canShare = !status.available && allTablesOccupied && (remaining - SAFETY_MARGIN) >= selectedStudents.length;
-                  const canUse = status.available || canShare;
-
-                  return (
-                    <div
-                      key={t.id}
-                      className={`p-3 rounded-lg border cursor-pointer transition-all ${
-                        selectedTavolo === t.id ? 'ring-2 ring-primary bg-accent/20' :
-                        !canUse ? 'opacity-40 cursor-not-allowed' : 'hover:bg-muted/50'
-                      }`}
-                      onClick={() => canUse && setSelectedTavolo(t.id)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium">{t.nomeTavolo}</span>
-                        <div className="flex items-center gap-2">
-                          {status.available ? (
-                            <Badge variant="secondary" className="bg-primary/10 text-primary">Libero</Badge>
-                          ) : canShare ? (
-                            <Badge variant="outline" className="text-[hsl(33,76%,51%)]">Condivisibile</Badge>
-                          ) : (
-                            <Badge variant="destructive">Occupato</Badge>
-                          )}
-                          <span className="text-sm text-muted-foreground">
-                            {status.usedSeats}/{t.capacitaMax} posti
-                          </span>
-                        </div>
-                      </div>
-                      {status.sharedWith && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          In uso da: {status.sharedWith.nomeClasse} ({getUtente(status.sharedWith.idInsegnante)?.nome})
-                        </p>
-                      )}
-                      {canShare && (
-                        <p className="text-xs text-[hsl(33,76%,51%)] mt-1">
-                          ⚠ Condivisione: {remaining - SAFETY_MARGIN} posti disponibili (margine sicurezza: {SAFETY_MARGIN})
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            {selectedTavolo && (() => {
-              const status = getTableStatus(selectedTavolo);
-              const tavolo = tavoli.find(t => t.id === selectedTavolo)!;
-              const total = status.usedSeats + selectedStudents.length;
-              if (!status.available && total > tavolo.capacitaMax - SAFETY_MARGIN) {
-                return <p className="text-sm text-destructive">⚠ Il numero totale di studenti ({total}) supera la capienza sicura del tavolo ({tavolo.capacitaMax - SAFETY_MARGIN})!</p>;
-              }
-              return null;
-            })()}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Step 3: Confirm */}
-      {step === 3 && (
         <Card>
           <CardHeader><CardTitle>Riepilogo Classe</CardTitle></CardHeader>
           <CardContent className="space-y-3">
-            <p><strong>Insegnante:</strong> {getUtente(selectedTeacher!)?.nome} {getUtente(selectedTeacher!)?.cognome}</p>
+            <p><strong>Insegnante:</strong> {teacher?.nome} {teacher?.cognome}</p>
             <p><strong>Orario:</strong> {selectedSlot?.giorno} {selectedSlot?.oraInizio}–{selectedSlot?.oraFine}</p>
-            <p><strong>Livello:</strong> {selectedVolontario?.livelloPreferito}</p>
-            <p><strong>Tavolo:</strong> {tavoli.find(t => t.id === selectedTavolo)?.nomeTavolo}</p>
-            {(() => {
-              const status = getTableStatus(selectedTavolo!);
-              if (!status.available) {
-                return (
-                  <p className="text-sm text-[hsl(33,76%,51%)] flex items-center gap-1">
-                    <AlertTriangle className="h-4 w-4" />
-                    Tavolo condiviso con "{status.sharedWith?.nomeClasse}"
-                  </p>
-                );
-              }
-              return null;
-            })()}
+            <p><strong>Livello:</strong> {teacher?.livello_preferito || '—'}</p>
+            {selectedAula && <p><strong>Aula:</strong> {selectedAula}</p>}
             <p><strong>Studenti ({selectedStudents.length}):</strong></p>
             <ul className="list-disc list-inside text-sm">
-              {selectedStudents.map(id => { const u = getUtente(id); return <li key={id}>{u?.nome} {u?.cognome}</li>; })}
+              {selectedStudents.map(id => { const s = studenti.find(st => st.id === id); return <li key={id}>{s?.nome} {s?.cognome}</li>; })}
             </ul>
           </CardContent>
         </Card>
@@ -401,11 +249,10 @@ export default function ClassBuilder() {
         <Button variant="outline" onClick={() => setStep(s => s - 1)} disabled={step === 0} className="gap-2">
           <ArrowLeft className="h-4 w-4" />Indietro
         </Button>
-        {step < 3 ? (
+        {step < 2 ? (
           <Button onClick={() => setStep(s => s + 1)} disabled={
             (step === 0 && (!selectedTeacher || !selectedSlot || !!teacherConflict)) ||
-            (step === 1 && selectedStudents.length === 0) ||
-            (step === 2 && !selectedTavolo)
+            (step === 1 && selectedStudents.length === 0)
           } className="gap-2">
             Avanti<ArrowRight className="h-4 w-4" />
           </Button>

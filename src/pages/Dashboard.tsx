@@ -1,17 +1,20 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { useStore } from '@/data/store';
-import { Users, Clock, GraduationCap, UserCog } from 'lucide-react';
+import { useStudenti, useClassi, useInsegnanti } from '@/hooks/useSupabase';
+import { Users, Clock, GraduationCap, UserCog, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export default function Dashboard() {
-  const { profiliStudenti, classi, profiliVolontari } = useStore();
+  const { data: studenti = [], isLoading: loadingS } = useStudenti();
+  const { data: classi = [], isLoading: loadingC } = useClassi();
+  const { data: insegnanti = [], isLoading: loadingI } = useInsegnanti();
   const navigate = useNavigate();
 
-  const attesaTest = profiliStudenti.filter(p => p.statoScuola === 'In attesa test').length;
-  const attesaClasse = profiliStudenti.filter(p => p.statoScuola === 'In attesa classe').length;
+  const loading = loadingS || loadingC || loadingI;
+
+  const attesaTest = studenti.filter(s => s.stato_scuola === 'In attesa test').length;
+  const attesaClasse = studenti.filter(s => s.stato_scuola === 'In attesa classe').length;
   const classiAttive = classi.length;
-  const insegnantiDisp = profiliVolontari.length;
+  const insegnantiDisp = insegnanti.length;
 
   const kpis = [
     { title: 'In attesa di test', value: attesaTest, icon: Clock, color: 'text-secondary' },
@@ -19,6 +22,14 @@ export default function Dashboard() {
     { title: 'Classi attive', value: classiAttive, icon: GraduationCap, color: 'text-primary' },
     { title: 'Insegnanti disponibili', value: insegnantiDisp, icon: UserCog, color: 'text-primary' },
   ];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
