@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useStore } from '@/data/store';
+import { useStudenti, useAddStudente, useUpdateStudente, useDeleteStudente, useClassi, useIscrizioni, useTest, type Studente } from '@/hooks/useSupabase';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,114 +11,99 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { toast } from 'sonner';
-import { Plus, Search, X, Clock, Pencil, Trash2 } from 'lucide-react';
-import type { Utente, ProfiloStudente, Giorno } from '@/data/types';
+import { Plus, Search, X, Clock, Pencil, Trash2, Loader2 } from 'lucide-react';
 
+type Giorno = 'Lunedì' | 'Martedì' | 'Mercoledì' | 'Giovedì' | 'Venerdì' | 'Sabato';
 const giorni: Giorno[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
 
 export default function Studenti() {
-  const { utenti, setUtenti, profiliStudenti, setProfiliStudenti, lingueParlate, setLingueParlate, disponibilita, setDisponibilita, classi, iscrizioniClassi, setIscrizioniClassi, sessioniTest } = useStore();
+  const { data: studenti = [], isLoading } = useStudenti();
+  const { data: classi = [] } = useClassi();
+  const { data: iscrizioni = [] } = useIscrizioni();
+  const { data: tests = [] } = useTest();
+  const addStudente = useAddStudente();
+  const updateStudente = useUpdateStudente();
+  const deleteStudente = useDeleteStudente();
+
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
-  const [showDetail, setShowDetail] = useState<number | null>(null);
+  const [showDetail, setShowDetail] = useState<string | null>(null);
   const [privacy, setPrivacy] = useState(false);
   const [form, setForm] = useState({ nome: '', cognome: '', email: '', telefono: '', dataNascita: '', nazionalita: '', lingue: '' });
-  const [newSlots, setNewSlots] = useState<{ giorno: Giorno; oraInizio: string; oraFine: string }[]>([]);
+  const [newSlots, setNewSlots] = useState<{ giorno: string; oraInizio: string; oraFine: string }[]>([]);
   const [editing, setEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ nome: '', cognome: '', email: '', telefono: '', dataNascita: '', nazionalita: '', lingue: '', noteDidattiche: '' });
-  const [editSlots, setEditSlots] = useState<{ giorno: Giorno; oraInizio: string; oraFine: string }[]>([]);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({ nome: '', cognome: '', email: '', telefono: '', dataNascita: '', nazionalita: '', lingue: '', note: '' });
+  const [editSlots, setEditSlots] = useState<{ giorno: string; oraInizio: string; oraFine: string }[]>([]);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const studenti = utenti.filter(u => !u.isVolontario);
   const filtered = studenti.filter(s => {
     const q = search.toLowerCase();
-    const lingue = lingueParlate.filter(l => l.idUtente === s.id).map(l => l.lingua).join(' ');
+    const lingue = (s.lingue_parlate || []).join(' ');
     return s.nome.toLowerCase().includes(q) || s.cognome.toLowerCase().includes(q) || s.nazionalita.toLowerCase().includes(q) || lingue.toLowerCase().includes(q);
   });
 
-  const getProfilo = (idUtente: number) => profiliStudenti.find(p => p.idUtente === idUtente);
-  const getLingue = (idUtente: number) => lingueParlate.filter(l => l.idUtente === idUtente).map(l => l.lingua);
-  const getDisp = (idUtente: number) => disponibilita.filter(d => d.idUtente === idUtente);
-
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!privacy) { toast.error('Il consenso privacy è obbligatorio'); return; }
     if (!form.nome || !form.cognome) { toast.error('Nome e cognome sono obbligatori'); return; }
-    const newId = Math.max(...utenti.map(u => u.id), 0) + 1;
-    const newUtente: Utente = {
-      id: newId, nome: form.nome.trim(), cognome: form.cognome.trim(), email: form.email.trim(), telefono: form.telefono.trim(),
-      dataNascita: form.dataNascita, nazionalita: form.nazionalita.trim(), dataIscrizione: new Date().toISOString().split('T')[0],
-      consensoPrivacy: true, isSocio: false, isVolontario: false,
-    };
-    const newProfilo: ProfiloStudente = { id: profiliStudenti.length + 1, idUtente: newId, statoScuola: 'In attesa test' };
-    setUtenti(prev => [...prev, newUtente]);
-    setProfiliStudenti(prev => [...prev, newProfilo]);
-    if (form.lingue.trim()) {
-      setLingueParlate(prev => [...prev, ...form.lingue.split(',').map(l => ({ idUtente: newId, lingua: l.trim() }))]);
-    }
-    if (newSlots.length > 0) {
-      const maxDispId = Math.max(...disponibilita.map(d => d.id), 0);
-      setDisponibilita(prev => [...prev, ...newSlots.map((s, i) => ({ id: maxDispId + i + 1, idUtente: newId, ...s }))]);
-    }
-    setShowAdd(false);
-    setForm({ nome: '', cognome: '', email: '', telefono: '', dataNascita: '', nazionalita: '', lingue: '' });
-    setNewSlots([]);
-    setPrivacy(false);
-    toast.success(`${newUtente.nome} ${newUtente.cognome} aggiunto/a con successo`);
+    try {
+      await addStudente.mutateAsync({
+        nome: form.nome.trim(), cognome: form.cognome.trim(), email: form.email.trim(),
+        telefono: form.telefono.trim(), nazionalita: form.nazionalita.trim(),
+        data_nascita: form.dataNascita || null,
+        lingue_parlate: form.lingue.split(',').map(l => l.trim()).filter(Boolean),
+        livello: null, stato_scuola: 'In attesa test', note: '',
+        disponibilita: newSlots,
+      });
+      setShowAdd(false);
+      setForm({ nome: '', cognome: '', email: '', telefono: '', dataNascita: '', nazionalita: '', lingue: '' });
+      setNewSlots([]);
+      setPrivacy(false);
+      toast.success('Studente aggiunto con successo');
+    } catch { toast.error('Errore durante il salvataggio'); }
   };
 
-  const detailUser = showDetail ? utenti.find(u => u.id === showDetail) : null;
-  const detailProfilo = showDetail ? getProfilo(showDetail) : null;
-  const detailSlots = showDetail ? getDisp(showDetail) : [];
-  const detailClassi = showDetail ? iscrizioniClassi.filter(ic => ic.idStudente === showDetail).map(ic => classi.find(c => c.id === ic.idClasse)).filter(Boolean) : [];
-  const detailTests = showDetail ? sessioniTest.filter(s => s.studentiConvocati.includes(showDetail)) : [];
+  const detailUser = showDetail ? studenti.find(s => s.id === showDetail) : null;
+  const detailClassi = showDetail ? iscrizioni.filter(ic => ic.studente_id === showDetail && ic.attiva).map(ic => classi.find(c => c.id === ic.classe_id)).filter(Boolean) : [];
+  const detailTests = showDetail ? tests.filter(t => t.studente_id === showDetail) : [];
 
   const startEdit = () => {
     if (!detailUser) return;
-    const lingue = showDetail ? getLingue(showDetail).join(', ') : '';
     setEditForm({
       nome: detailUser.nome, cognome: detailUser.cognome, email: detailUser.email, telefono: detailUser.telefono,
-      dataNascita: detailUser.dataNascita, nazionalita: detailUser.nazionalita, lingue,
-      noteDidattiche: detailProfilo?.noteDidattiche || '',
+      dataNascita: detailUser.data_nascita || '', nazionalita: detailUser.nazionalita,
+      lingue: (detailUser.lingue_parlate || []).join(', '), note: detailUser.note || '',
     });
-    setEditSlots(detailSlots.map(s => ({ giorno: s.giorno, oraInizio: s.oraInizio, oraFine: s.oraFine })));
+    setEditSlots((detailUser.disponibilita || []) as any);
     setEditing(true);
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!showDetail || !editForm.nome || !editForm.cognome) { toast.error('Nome e cognome sono obbligatori'); return; }
-    setUtenti(prev => prev.map(u => u.id === showDetail ? {
-      ...u, nome: editForm.nome.trim(), cognome: editForm.cognome.trim(), email: editForm.email.trim(),
-      telefono: editForm.telefono.trim(), dataNascita: editForm.dataNascita, nazionalita: editForm.nazionalita.trim(),
-    } : u));
-    // Update lingue
-    setLingueParlate(prev => {
-      const without = prev.filter(l => l.idUtente !== showDetail);
-      const newL = editForm.lingue.split(',').map(l => l.trim()).filter(Boolean).map(l => ({ idUtente: showDetail, lingua: l }));
-      return [...without, ...newL];
-    });
-    // Update note didattiche
-    setProfiliStudenti(prev => prev.map(p => p.idUtente === showDetail ? { ...p, noteDidattiche: editForm.noteDidattiche || undefined } : p));
-    // Update disponibilità
-    const withoutOld = disponibilita.filter(d => d.idUtente !== showDetail);
-    const maxId = Math.max(...disponibilita.map(d => d.id), 0);
-    const newDisps = editSlots.map((s, i) => ({ id: maxId + i + 1, idUtente: showDetail, ...s }));
-    setDisponibilita([...withoutOld, ...newDisps]);
-    setEditing(false);
-    toast.success('Studente aggiornato');
+    try {
+      await updateStudente.mutateAsync({
+        id: showDetail, nome: editForm.nome.trim(), cognome: editForm.cognome.trim(),
+        email: editForm.email.trim(), telefono: editForm.telefono.trim(),
+        data_nascita: editForm.dataNascita || null, nazionalita: editForm.nazionalita.trim(),
+        lingue_parlate: editForm.lingue.split(',').map(l => l.trim()).filter(Boolean),
+        note: editForm.note, disponibilita: editSlots,
+      });
+      setEditing(false);
+      toast.success('Studente aggiornato');
+    } catch { toast.error('Errore durante il salvataggio'); }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteId) return;
-    setUtenti(prev => prev.filter(u => u.id !== deleteId));
-    setProfiliStudenti(prev => prev.filter(p => p.idUtente !== deleteId));
-    setLingueParlate(prev => prev.filter(l => l.idUtente !== deleteId));
-    setDisponibilita(prev => prev.filter(d => d.idUtente !== deleteId));
-    setIscrizioniClassi(prev => prev.filter(ic => ic.idStudente !== deleteId));
-    toast.success('Studente eliminato');
-    setDeleteId(null);
-    setShowDetail(null);
-    setEditing(false);
+    try {
+      await deleteStudente.mutateAsync(deleteId);
+      toast.success('Studente eliminato');
+      setDeleteId(null); setShowDetail(null); setEditing(false);
+    } catch { toast.error('Errore durante l\'eliminazione'); }
   };
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -147,18 +132,15 @@ export default function Studenti() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map(s => {
-              const profilo = getProfilo(s.id);
-              return (
-                <TableRow key={s.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setShowDetail(s.id); setEditing(false); }}>
-                  <TableCell className="font-medium">{s.nome} {s.cognome}</TableCell>
-                  <TableCell className="hidden sm:table-cell">{s.nazionalita}</TableCell>
-                  <TableCell className="hidden md:table-cell">{getLingue(s.id).join(', ') || '—'}</TableCell>
-                  <TableCell className="hidden md:table-cell">{profilo?.livelloRaggiunto || '—'}</TableCell>
-                  <TableCell>{profilo && <StatusBadge stato={profilo.statoScuola} />}</TableCell>
-                </TableRow>
-              );
-            })}
+            {filtered.map(s => (
+              <TableRow key={s.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setShowDetail(s.id); setEditing(false); }}>
+                <TableCell className="font-medium">{s.nome} {s.cognome}</TableCell>
+                <TableCell className="hidden sm:table-cell">{s.nazionalita}</TableCell>
+                <TableCell className="hidden md:table-cell">{(s.lingue_parlate || []).join(', ') || '—'}</TableCell>
+                <TableCell className="hidden md:table-cell">{s.livello || '—'}</TableCell>
+                <TableCell><StatusBadge stato={s.stato_scuola as any} /></TableCell>
+              </TableRow>
+            ))}
             {filtered.length === 0 && (
               <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Nessuno studente trovato</TableCell></TableRow>
             )}
@@ -171,7 +153,7 @@ export default function Studenti() {
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{detailUser?.nome} {detailUser?.cognome}</DialogTitle>
-            <DialogDescription>{detailUser?.nazionalita} — Iscritto il {detailUser?.dataIscrizione}</DialogDescription>
+            <DialogDescription>{detailUser?.nazionalita}</DialogDescription>
           </DialogHeader>
 
           {!editing ? (
@@ -179,29 +161,26 @@ export default function Studenti() {
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div><span className="text-muted-foreground">Email:</span> {detailUser?.email || '—'}</div>
                 <div><span className="text-muted-foreground">Telefono:</span> {detailUser?.telefono || '—'}</div>
-                <div><span className="text-muted-foreground">Data nascita:</span> {detailUser?.dataNascita || '—'}</div>
+                <div><span className="text-muted-foreground">Data nascita:</span> {detailUser?.data_nascita || '—'}</div>
                 <div><span className="text-muted-foreground">Nazionalità:</span> {detailUser?.nazionalita || '—'}</div>
-                <div className="col-span-2"><span className="text-muted-foreground">Lingue:</span> {showDetail ? getLingue(showDetail).join(', ') || '—' : '—'}</div>
+                <div className="col-span-2"><span className="text-muted-foreground">Lingue:</span> {(detailUser?.lingue_parlate || []).join(', ') || '—'}</div>
               </div>
 
-              {detailProfilo && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm">Stato:</span>
-                    <StatusBadge stato={detailProfilo.statoScuola} />
-                  </div>
-                  {detailProfilo.livelloRaggiunto && <p className="text-sm"><span className="text-muted-foreground">Livello:</span> {detailProfilo.livelloRaggiunto}</p>}
-                  {detailProfilo.dataUltimoTest && <p className="text-sm"><span className="text-muted-foreground">Ultimo test:</span> {detailProfilo.dataUltimoTest}</p>}
-                  {detailProfilo.noteDidattiche && <p className="text-sm"><span className="text-muted-foreground">Note:</span> {detailProfilo.noteDidattiche}</p>}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-sm">Stato:</span>
+                  <StatusBadge stato={detailUser?.stato_scuola as any} />
                 </div>
-              )}
+                {detailUser?.livello && <p className="text-sm"><span className="text-muted-foreground">Livello:</span> {detailUser.livello}</p>}
+                {detailUser?.note && <p className="text-sm"><span className="text-muted-foreground">Note:</span> {detailUser.note}</p>}
+              </div>
 
               <div className="space-y-2">
                 <p className="font-medium text-sm flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> Disponibilità Orarie</p>
                 <div className="flex flex-wrap gap-1">
-                  {detailSlots.length === 0 && <span className="text-sm text-muted-foreground">Nessuna disponibilità</span>}
-                  {detailSlots.map(s => (
-                    <Badge key={s.id} variant="outline" className="text-xs">{s.giorno} {s.oraInizio}–{s.oraFine}</Badge>
+                  {(!detailUser?.disponibilita || (detailUser.disponibilita as any[]).length === 0) && <span className="text-sm text-muted-foreground">Nessuna disponibilità</span>}
+                  {(detailUser?.disponibilita as any[] || []).map((s: any, i: number) => (
+                    <Badge key={i} variant="outline" className="text-xs">{s.giorno} {s.oraInizio}–{s.oraFine}</Badge>
                   ))}
                 </div>
               </div>
@@ -210,7 +189,7 @@ export default function Studenti() {
                 <div className="space-y-1">
                   <p className="font-medium text-sm">Classi</p>
                   {detailClassi.map(c => c && (
-                    <Badge key={c.id} variant="secondary" className="mr-1">{c.nomeClasse} — {c.giorno} {c.oraInizio}</Badge>
+                    <Badge key={c.id} variant="secondary" className="mr-1">{c.nome} — {c.giorno_settimana} {c.orario_inizio}</Badge>
                   ))}
                 </div>
               )}
@@ -218,14 +197,11 @@ export default function Studenti() {
               {detailTests.length > 0 && (
                 <div className="space-y-1">
                   <p className="font-medium text-sm">Storico Test</p>
-                  {detailTests.map(t => {
-                    const res = t.risultati.find(r => r.idStudente === showDetail);
-                    return (
-                      <p key={t.id} className="text-sm text-muted-foreground">
-                        {t.data} — {res ? `Livello: ${res.livello}` : 'Convocato'} {res?.note ? `(${res.note})` : ''}
-                      </p>
-                    );
-                  })}
+                  {detailTests.map(t => (
+                    <p key={t.id} className="text-sm text-muted-foreground">
+                      {t.data_test} — {t.livello_assegnato ? `Livello: ${t.livello_assegnato}` : 'Convocato'} {t.note ? `(${t.note})` : ''}
+                    </p>
+                  ))}
                 </div>
               )}
 
@@ -247,7 +223,7 @@ export default function Studenti() {
                 <div><Label>Nazionalità</Label><Input value={editForm.nazionalita} onChange={e => setEditForm({ ...editForm, nazionalita: e.target.value })} /></div>
               </div>
               <div><Label>Lingue parlate (separate da virgola)</Label><Input value={editForm.lingue} onChange={e => setEditForm({ ...editForm, lingue: e.target.value })} /></div>
-              <div><Label>Note didattiche</Label><Input value={editForm.noteDidattiche} onChange={e => setEditForm({ ...editForm, noteDidattiche: e.target.value })} /></div>
+              <div><Label>Note</Label><Input value={editForm.note} onChange={e => setEditForm({ ...editForm, note: e.target.value })} /></div>
 
               <div>
                 <Label>Disponibilità Orarie</Label>
@@ -317,13 +293,12 @@ export default function Studenti() {
   );
 }
 
-function AvailabilityEditor({ slots, onChange }: { slots: { giorno: Giorno; oraInizio: string; oraFine: string }[]; onChange: (s: { giorno: Giorno; oraInizio: string; oraFine: string }[]) => void }) {
-  const giorni: Giorno[] = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
+function AvailabilityEditor({ slots, onChange }: { slots: { giorno: string; oraInizio: string; oraFine: string }[]; onChange: (s: { giorno: string; oraInizio: string; oraFine: string }[]) => void }) {
   return (
     <div className="space-y-2 mt-1">
       {slots.map((slot, i) => (
         <div key={i} className="flex items-center gap-2">
-          <Select value={slot.giorno} onValueChange={v => { const u = [...slots]; u[i] = { ...u[i], giorno: v as Giorno }; onChange(u); }}>
+          <Select value={slot.giorno} onValueChange={v => { const u = [...slots]; u[i] = { ...u[i], giorno: v }; onChange(u); }}>
             <SelectTrigger className="w-28 h-8 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>{giorni.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
           </Select>

@@ -14,7 +14,259 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      classi: {
+        Row: {
+          aula: string | null
+          created_at: string
+          giorno_settimana: string | null
+          id: string
+          insegnante_id: string | null
+          livello: string | null
+          nome: string
+          orario_fine: string | null
+          orario_inizio: string | null
+        }
+        Insert: {
+          aula?: string | null
+          created_at?: string
+          giorno_settimana?: string | null
+          id?: string
+          insegnante_id?: string | null
+          livello?: string | null
+          nome: string
+          orario_fine?: string | null
+          orario_inizio?: string | null
+        }
+        Update: {
+          aula?: string | null
+          created_at?: string
+          giorno_settimana?: string | null
+          id?: string
+          insegnante_id?: string | null
+          livello?: string | null
+          nome?: string
+          orario_fine?: string | null
+          orario_inizio?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "classi_insegnante_id_fkey"
+            columns: ["insegnante_id"]
+            isOneToOne: false
+            referencedRelation: "insegnanti"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      insegnanti: {
+        Row: {
+          cognome: string
+          created_at: string
+          data_nascita: string | null
+          data_scadenza_socio: string | null
+          disponibilita: Json | null
+          email: string | null
+          id: string
+          livello_preferito: string | null
+          nazionalita: string | null
+          nome: string
+          note_metodologiche: string | null
+          telefono: string | null
+        }
+        Insert: {
+          cognome: string
+          created_at?: string
+          data_nascita?: string | null
+          data_scadenza_socio?: string | null
+          disponibilita?: Json | null
+          email?: string | null
+          id?: string
+          livello_preferito?: string | null
+          nazionalita?: string | null
+          nome: string
+          note_metodologiche?: string | null
+          telefono?: string | null
+        }
+        Update: {
+          cognome?: string
+          created_at?: string
+          data_nascita?: string | null
+          data_scadenza_socio?: string | null
+          disponibilita?: Json | null
+          email?: string | null
+          id?: string
+          livello_preferito?: string | null
+          nazionalita?: string | null
+          nome?: string
+          note_metodologiche?: string | null
+          telefono?: string | null
+        }
+        Relationships: []
+      }
+      iscrizioni: {
+        Row: {
+          attiva: boolean | null
+          classe_id: string
+          data_iscrizione: string | null
+          id: string
+          studente_id: string
+        }
+        Insert: {
+          attiva?: boolean | null
+          classe_id: string
+          data_iscrizione?: string | null
+          id?: string
+          studente_id: string
+        }
+        Update: {
+          attiva?: boolean | null
+          classe_id?: string
+          data_iscrizione?: string | null
+          id?: string
+          studente_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "iscrizioni_classe_id_fkey"
+            columns: ["classe_id"]
+            isOneToOne: false
+            referencedRelation: "classi"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "iscrizioni_studente_id_fkey"
+            columns: ["studente_id"]
+            isOneToOne: false
+            referencedRelation: "studenti"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      presenze: {
+        Row: {
+          classe_id: string
+          data: string
+          id: string
+          note: string | null
+          presente: boolean | null
+          studente_id: string
+        }
+        Insert: {
+          classe_id: string
+          data: string
+          id?: string
+          note?: string | null
+          presente?: boolean | null
+          studente_id: string
+        }
+        Update: {
+          classe_id?: string
+          data?: string
+          id?: string
+          note?: string | null
+          presente?: boolean | null
+          studente_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "presenze_classe_id_fkey"
+            columns: ["classe_id"]
+            isOneToOne: false
+            referencedRelation: "classi"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "presenze_studente_id_fkey"
+            columns: ["studente_id"]
+            isOneToOne: false
+            referencedRelation: "studenti"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      studenti: {
+        Row: {
+          cognome: string
+          created_at: string
+          data_nascita: string | null
+          disponibilita: Json | null
+          email: string | null
+          id: string
+          lingue_parlate: string[] | null
+          livello: string | null
+          nazionalita: string | null
+          nome: string
+          note: string | null
+          stato_scuola: string
+          telefono: string | null
+        }
+        Insert: {
+          cognome: string
+          created_at?: string
+          data_nascita?: string | null
+          disponibilita?: Json | null
+          email?: string | null
+          id?: string
+          lingue_parlate?: string[] | null
+          livello?: string | null
+          nazionalita?: string | null
+          nome: string
+          note?: string | null
+          stato_scuola?: string
+          telefono?: string | null
+        }
+        Update: {
+          cognome?: string
+          created_at?: string
+          data_nascita?: string | null
+          disponibilita?: Json | null
+          email?: string | null
+          id?: string
+          lingue_parlate?: string[] | null
+          livello?: string | null
+          nazionalita?: string | null
+          nome?: string
+          note?: string | null
+          stato_scuola?: string
+          telefono?: string | null
+        }
+        Relationships: []
+      }
+      test: {
+        Row: {
+          created_at: string
+          data_test: string | null
+          id: string
+          livello_assegnato: string | null
+          note: string | null
+          studente_id: string
+        }
+        Insert: {
+          created_at?: string
+          data_test?: string | null
+          id?: string
+          livello_assegnato?: string | null
+          note?: string | null
+          studente_id: string
+        }
+        Update: {
+          created_at?: string
+          data_test?: string | null
+          id?: string
+          livello_assegnato?: string | null
+          note?: string | null
+          studente_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "test_studente_id_fkey"
+            columns: ["studente_id"]
+            isOneToOne: false
+            referencedRelation: "studenti"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

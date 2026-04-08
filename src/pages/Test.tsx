@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useStore } from '@/data/store';
+import { useStudenti, useUpdateStudente, useTest, useAddTestBatch, useUpdateTest, type Studente } from '@/hooks/useSupabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,88 +10,100 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { StatusBadge } from '@/components/StatusBadge';
 import { toast } from 'sonner';
-import { Plus, ClipboardCheck, Users, CalendarClock } from 'lucide-react';
-import type { Livello, SessioneTest } from '@/data/types';
+import { Plus, ClipboardCheck, Users, CalendarClock, Loader2 } from 'lucide-react';
 
-const livelli: Livello[] = ['Alfa', 'Pre-A1', 'A1', 'A2', 'B1', 'B2'];
+const livelli = ['Alfa', 'Pre-A1', 'A1', 'A2', 'B1', 'B2'];
 
 export default function TestPage() {
-  const { utenti, profiliStudenti, setProfiliStudenti, sessioniTest, setSessioniTest } = useStore();
+  const { data: studenti = [], isLoading: loadingS } = useStudenti();
+  const { data: tests = [], isLoading: loadingT } = useTest();
+  const addTestBatch = useAddTestBatch();
+  const updateTest = useUpdateTest();
+  const updateStudente = useUpdateStudente();
+
   const [showNew, setShowNew] = useState(false);
-  const [showResult, setShowResult] = useState<SessioneTest | null>(null);
+  const [showSession, setShowSession] = useState<string | null>(null); // date string
   const [newDate, setNewDate] = useState('');
-  const [selected, setSelected] = useState<number[]>([]);
-  const [results, setResults] = useState<Record<number, { livello: Livello; note: string }>>({});
+  const [selected, setSelected] = useState<string[]>([]); // student IDs
+  const [results, setResults] = useState<Record<string, { livello: string; note: string }>>({});
 
-  const getUtente = (idUtente: number) => utenti.find(u => u.id === idUtente);
+  // Group tests by data_test to create "sessions"
+  const sessions = (() => {
+    const map = new Map<string, typeof tests>();
+    tests.forEach(t => {
+      if (!t.data_test) return;
+      const key = t.data_test;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(t);
+    });
+    return Array.from(map.entries()).map(([date, records]) => ({
+      date,
+      records,
+      completata: records.every(r => r.livello_assegnato !== null),
+    }));
+  })();
 
-  // Students awaiting test but NOT yet convoked to any future session
-  const convokedStudentIds = sessioniTest.filter(s => !s.completata).flatMap(s => s.studentiConvocati);
-  const studentiAttesaTest = profiliStudenti.filter(p => p.statoScuola === 'In attesa test' && !convokedStudentIds.includes(p.idUtente));
-  const studentiConvocati = profiliStudenti.filter(p => p.statoScuola === 'In attesa test' && convokedStudentIds.includes(p.idUtente));
-  const studentiAttesaClasse = profiliStudenti.filter(p => p.statoScuola === 'In attesa classe');
+  // Students awaiting test but NOT convoked
+  const convokedStudentIds = tests.filter(t => !t.livello_assegnato).map(t => t.studente_id);
+  const studentiAttesaTest = studenti.filter(s => s.stato_scuola === 'In attesa test' && !convokedStudentIds.includes(s.id));
+  const studentiConvocati = studenti.filter(s => s.stato_scuola === 'In attesa test' && convokedStudentIds.includes(s.id));
+  const studentiAttesaClasse = studenti.filter(s => s.stato_scuola === 'In attesa classe');
 
-  const getConvocationDate = (idUtente: number) => {
-    const session = sessioniTest.find(s => !s.completata && s.studentiConvocati.includes(idUtente));
-    return session?.data || '';
+  const getConvocationDate = (studentId: string) => {
+    const t = tests.find(t => t.studente_id === studentId && !t.livello_assegnato);
+    return t?.data_test || '';
   };
 
-  const handleCreateSession = () => {
+  const handleCreateSession = async () => {
     if (!newDate) { toast.error('Seleziona una data'); return; }
     if (selected.length === 0) { toast.error('Seleziona almeno uno studente'); return; }
-    const newSession: SessioneTest = {
-      id: Math.max(...sessioniTest.map(s => s.id), 0) + 1,
-      data: newDate,
-      studentiConvocati: selected.map(profId => {
-        const p = profiliStudenti.find(ps => ps.id === profId);
-        return p!.idUtente;
-      }),
-      risultati: [],
-      completata: false,
-    };
-    setSessioniTest(prev => [...prev, newSession]);
-    setShowNew(false);
-    setSelected([]);
-    setNewDate('');
-    toast.success('Sessione di test creata');
+    try {
+      await addTestBatch.mutateAsync(
+        selected.map(studentId => ({ studente_id: studentId, data_test: newDate, livello_assegnato: null, note: null }))
+      );
+      setShowNew(false); setSelected([]); setNewDate('');
+      toast.success('Sessione di test creata');
+    } catch { toast.error('Errore durante la creazione'); }
   };
 
-  const handleSaveResults = (session: SessioneTest) => {
-    const risultati = Object.entries(results).map(([idStr, r]) => ({
-      idStudente: parseInt(idStr), livello: r.livello, note: r.note || undefined,
-    }));
-    if (risultati.length !== session.studentiConvocati.length) {
-      toast.error('Inserisci il livello per tutti gli studenti convocati');
-      return;
+  const openSession = (date: string) => {
+    const session = sessions.find(s => s.date === date);
+    if (!session) return;
+    setShowSession(date);
+    const r: Record<string, { livello: string; note: string }> = {};
+    session.records.forEach(t => {
+      r[t.id] = { livello: t.livello_assegnato || 'A1', note: t.note || '' };
+    });
+    setResults(r);
+  };
+
+  const handleSaveResults = async () => {
+    const session = sessions.find(s => s.date === showSession);
+    if (!session) return;
+    const entries = Object.entries(results);
+    if (entries.length !== session.records.length) {
+      toast.error('Inserisci il livello per tutti gli studenti convocati'); return;
     }
-    setSessioniTest(prev => prev.map(s => s.id === session.id ? { ...s, risultati, completata: true } : s));
-    setProfiliStudenti(prev => prev.map(p => {
-      const res = risultati.find(r => r.idStudente === p.idUtente);
-      if (res) return { ...p, statoScuola: 'In attesa classe' as const, livelloRaggiunto: res.livello, dataUltimoTest: session.data, noteDidattiche: res.note };
-      return p;
-    }));
-    setShowResult(null);
-    setResults({});
-    toast.success('Risultati salvati. Studenti aggiornati a "In attesa classe"');
+    try {
+      for (const [testId, r] of entries) {
+        await updateTest.mutateAsync({ id: testId, livello_assegnato: r.livello, note: r.note || null });
+        const testRec = session.records.find(t => t.id === testId);
+        if (testRec) {
+          await updateStudente.mutateAsync({ id: testRec.studente_id, stato_scuola: 'In attesa classe', livello: r.livello });
+        }
+      }
+      setShowSession(null); setResults({});
+      toast.success('Risultati salvati. Studenti aggiornati a "In attesa classe"');
+    } catch { toast.error('Errore durante il salvataggio'); }
   };
 
-  const openResults = (session: SessioneTest) => {
-    setShowResult(session);
-    if (session.completata) {
-      const r: Record<number, { livello: Livello; note: string }> = {};
-      session.risultati.forEach(res => { r[res.idStudente] = { livello: res.livello, note: res.note || '' }; });
-      setResults(r);
-    } else {
-      const r: Record<number, { livello: Livello; note: string }> = {};
-      session.studentiConvocati.forEach(id => { r[id] = { livello: 'A1', note: '' }; });
-      setResults(r);
-    }
-  };
+  const futureSessions = sessions.filter(s => !s.completata);
+  const pastSessions = sessions.filter(s => s.completata);
 
-  const futureSessions = sessioniTest.filter(s => !s.completata);
-  const pastSessions = sessioniTest.filter(s => s.completata);
+  if (loadingS || loadingT) {
+    return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -117,15 +129,12 @@ export default function TestPage() {
               <p className="text-sm text-muted-foreground text-center py-2">Nessuno studente</p>
             ) : (
               <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                {studentiAttesaTest.map(p => {
-                  const u = getUtente(p.idUtente);
-                  return (
-                    <div key={p.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 text-sm">
-                      <span className="font-medium">{u?.nome} {u?.cognome}</span>
-                      <span className="text-muted-foreground text-xs">{u?.nazionalita}</span>
-                    </div>
-                  );
-                })}
+                {studentiAttesaTest.map(s => (
+                  <div key={s.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 text-sm">
+                    <span className="font-medium">{s.nome} {s.cognome}</span>
+                    <span className="text-muted-foreground text-xs">{s.nazionalita}</span>
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>
@@ -143,16 +152,12 @@ export default function TestPage() {
               <p className="text-sm text-muted-foreground text-center py-2">Nessuno studente</p>
             ) : (
               <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                {studentiConvocati.map(p => {
-                  const u = getUtente(p.idUtente);
-                  const date = getConvocationDate(p.idUtente);
-                  return (
-                    <div key={p.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 text-sm">
-                      <span className="font-medium">{u?.nome} {u?.cognome}</span>
-                      <Badge variant="outline" className="text-xs">{date}</Badge>
-                    </div>
-                  );
-                })}
+                {studentiConvocati.map(s => (
+                  <div key={s.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 text-sm">
+                    <span className="font-medium">{s.nome} {s.cognome}</span>
+                    <Badge variant="outline" className="text-xs">{getConvocationDate(s.id)}</Badge>
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>
@@ -170,18 +175,14 @@ export default function TestPage() {
               <p className="text-sm text-muted-foreground text-center py-2">Nessuno studente</p>
             ) : (
               <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                {studentiAttesaClasse.map(p => {
-                  const u = getUtente(p.idUtente);
-                  return (
-                    <div key={p.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 text-sm">
-                      <div>
-                        <span className="font-medium">{u?.nome} {u?.cognome}</span>
-                        {p.livelloRaggiunto && <Badge variant="secondary" className="ml-2 text-xs">{p.livelloRaggiunto}</Badge>}
-                      </div>
-                      <span className="text-muted-foreground text-xs">{p.dataUltimoTest}</span>
+                {studentiAttesaClasse.map(s => (
+                  <div key={s.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 text-sm">
+                    <div>
+                      <span className="font-medium">{s.nome} {s.cognome}</span>
+                      {s.livello && <Badge variant="secondary" className="ml-2 text-xs">{s.livello}</Badge>}
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>
@@ -190,7 +191,7 @@ export default function TestPage() {
 
       <Separator />
 
-      {/* Test Sessions */}
+      {/* Sessions */}
       <div className="space-y-4">
         <h2 className="text-xl font-semibold">Sessioni di Test</h2>
 
@@ -198,13 +199,13 @@ export default function TestPage() {
           <div className="space-y-3">
             <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Sessioni in programma</h3>
             {futureSessions.map(session => (
-              <Card key={session.id} className="cursor-pointer hover:shadow-md transition-shadow border-l-4 border-l-orange-400" onClick={() => openResults(session)}>
+              <Card key={session.date} className="cursor-pointer hover:shadow-md transition-shadow border-l-4 border-l-orange-400" onClick={() => openSession(session.date)}>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-base">Sessione del {session.data}</CardTitle>
+                  <CardTitle className="text-base">Sessione del {session.date}</CardTitle>
                   <Badge variant="outline">In corso</Badge>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm text-muted-foreground">{session.studentiConvocati.length} studenti convocati</p>
+                  <p className="text-sm text-muted-foreground">{session.records.length} studenti convocati</p>
                 </CardContent>
               </Card>
             ))}
@@ -215,17 +216,17 @@ export default function TestPage() {
           <div className="space-y-3">
             <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Sessioni completate</h3>
             {[...pastSessions].reverse().map(session => (
-              <Card key={session.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => openResults(session)}>
+              <Card key={session.date} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => openSession(session.date)}>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-base">Sessione del {session.data}</CardTitle>
+                  <CardTitle className="text-base">Sessione del {session.date}</CardTitle>
                   <Badge variant="default" className="bg-primary">✓ Completata</Badge>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm text-muted-foreground">{session.studentiConvocati.length} studenti convocati</p>
+                  <p className="text-sm text-muted-foreground">{session.records.length} studenti</p>
                   <div className="mt-2 flex flex-wrap gap-1">
-                    {session.risultati.map(r => {
-                      const u = getUtente(r.idStudente);
-                      return <Badge key={r.idStudente} variant="secondary" className="text-xs">{u?.nome}: {r.livello}</Badge>;
+                    {session.records.map(r => {
+                      const s = studenti.find(st => st.id === r.studente_id);
+                      return <Badge key={r.id} variant="secondary" className="text-xs">{s?.nome}: {r.livello_assegnato}</Badge>;
                     })}
                   </div>
                 </CardContent>
@@ -234,7 +235,7 @@ export default function TestPage() {
           </div>
         )}
 
-        {sessioniTest.length === 0 && (
+        {sessions.length === 0 && (
           <Card><CardContent className="py-8 text-center text-muted-foreground">Nessuna sessione creata</CardContent></Card>
         )}
       </div>
@@ -252,15 +253,12 @@ export default function TestPage() {
               <Label>Studenti da convocare</Label>
               <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
                 {studentiAttesaTest.length === 0 && <p className="text-sm text-muted-foreground">Nessuno studente in attesa di test</p>}
-                {studentiAttesaTest.map(p => {
-                  const u = getUtente(p.idUtente);
-                  return (
-                    <div key={p.id} className="flex items-center gap-3">
-                      <Checkbox checked={selected.includes(p.id)} onCheckedChange={(v) => setSelected(prev => v ? [...prev, p.id] : prev.filter(id => id !== p.id))} />
-                      <span className="text-sm">{u?.nome} {u?.cognome} — {u?.nazionalita}</span>
-                    </div>
-                  );
-                })}
+                {studentiAttesaTest.map(s => (
+                  <div key={s.id} className="flex items-center gap-3">
+                    <Checkbox checked={selected.includes(s.id)} onCheckedChange={(v) => setSelected(prev => v ? [...prev, s.id] : prev.filter(id => id !== s.id))} />
+                    <span className="text-sm">{s.nome} {s.cognome} — {s.nazionalita}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -272,11 +270,11 @@ export default function TestPage() {
       </Dialog>
 
       {/* Results Dialog */}
-      <Dialog open={!!showResult} onOpenChange={() => { setShowResult(null); setResults({}); }}>
+      <Dialog open={!!showSession} onOpenChange={() => { setShowSession(null); setResults({}); }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Risultati Test — {showResult?.data}</DialogTitle>
-            <DialogDescription>{showResult?.completata ? 'Risultati registrati.' : 'Assegna il livello a ciascuno studente.'}</DialogDescription>
+            <DialogTitle>Risultati Test — {showSession}</DialogTitle>
+            <DialogDescription>{sessions.find(s => s.date === showSession)?.completata ? 'Risultati registrati.' : 'Assegna il livello a ciascuno studente.'}</DialogDescription>
           </DialogHeader>
           <Table>
             <TableHeader>
@@ -287,19 +285,20 @@ export default function TestPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {showResult?.studentiConvocati.map(idStudente => {
-                const u = getUtente(idStudente);
+              {sessions.find(s => s.date === showSession)?.records.map(t => {
+                const s = studenti.find(st => st.id === t.studente_id);
+                const isComplete = sessions.find(ss => ss.date === showSession)?.completata;
                 return (
-                  <TableRow key={idStudente}>
-                    <TableCell>{u?.nome} {u?.cognome}</TableCell>
+                  <TableRow key={t.id}>
+                    <TableCell>{s?.nome} {s?.cognome}</TableCell>
                     <TableCell>
-                      <Select disabled={showResult.completata} value={results[idStudente]?.livello || 'A1'} onValueChange={v => setResults(prev => ({ ...prev, [idStudente]: { ...prev[idStudente], livello: v as Livello } }))}>
+                      <Select disabled={isComplete} value={results[t.id]?.livello || 'A1'} onValueChange={v => setResults(prev => ({ ...prev, [t.id]: { ...prev[t.id], livello: v } }))}>
                         <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
                         <SelectContent>{livelli.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}</SelectContent>
                       </Select>
                     </TableCell>
                     <TableCell>
-                      <Input disabled={showResult.completata} placeholder="Note..." value={results[idStudente]?.note || ''} onChange={e => setResults(prev => ({ ...prev, [idStudente]: { ...prev[idStudente], note: e.target.value } }))} />
+                      <Input disabled={isComplete} placeholder="Note..." value={results[t.id]?.note || ''} onChange={e => setResults(prev => ({ ...prev, [t.id]: { ...prev[t.id], note: e.target.value } }))} />
                     </TableCell>
                   </TableRow>
                 );
@@ -307,8 +306,8 @@ export default function TestPage() {
             </TableBody>
           </Table>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowResult(null); setResults({}); }}>Chiudi</Button>
-            {!showResult?.completata && <Button onClick={() => showResult && handleSaveResults(showResult)}>Salva Risultati</Button>}
+            <Button variant="outline" onClick={() => { setShowSession(null); setResults({}); }}>Chiudi</Button>
+            {!sessions.find(s => s.date === showSession)?.completata && <Button onClick={handleSaveResults}>Salva Risultati</Button>}
           </DialogFooter>
         </DialogContent>
       </Dialog>
