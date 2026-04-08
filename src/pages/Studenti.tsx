@@ -30,10 +30,10 @@ export default function Studenti() {
   const [showDetail, setShowDetail] = useState<string | null>(null);
   const [privacy, setPrivacy] = useState(false);
   const [form, setForm] = useState({ nome: '', cognome: '', email: '', telefono: '', dataNascita: '', nazionalita: '', lingue: '' });
-  const [newSlots, setNewSlots] = useState<{ giorno: Giorno; oraInizio: string; oraFine: string }[]>([]);
+  const [newSlots, setNewSlots] = useState<{ giorno: string; oraInizio: string; oraFine: string }[]>([]);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({ nome: '', cognome: '', email: '', telefono: '', dataNascita: '', nazionalita: '', lingue: '', note: '' });
-  const [editSlots, setEditSlots] = useState<{ giorno: Giorno; oraInizio: string; oraFine: string }[]>([]);
+  const [editSlots, setEditSlots] = useState<{ giorno: string; oraInizio: string; oraFine: string }[]>([]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const filtered = studenti.filter(s => {
